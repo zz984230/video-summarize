@@ -1,6 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 import { ModelConfig, VideoInfo, SummaryResult } from '../types';
 import { VideoStreamExtractor } from './videoStreamExtractor';
+import { EnhancedVideoAnalyzer } from './videoFrameExtractor';
+import { DashToMp4Converter, EnhancedVideoAnalyzerPro } from './dashToMp4Converter';
 
 export class ModelService {
   private axiosInstance: AxiosInstance;
@@ -66,6 +68,49 @@ export class ModelService {
 
   async generateSummary(videoInfo: VideoInfo): Promise<SummaryResult> {
     try {
+      console.log('开始生成视频摘要，使用增强分析策略...');
+      
+      // 优先尝试DASH到MP4转换分析（最新技术方案）
+      if (this.config.baseUrl.includes('modelscope.cn') && this.config.model && this.config.model.includes('VL')) {
+        try {
+          console.log('🎬 尝试DASH视频流转换分析...');
+          const dashResult = await EnhancedVideoAnalyzerPro.analyzeWithDashStream(videoInfo, this);
+          if (dashResult.conversionSuccess && dashResult.analysisComplete) {
+            console.log('✅ DASH视频流分析成功！');
+            return {
+              ...dashResult,
+              analysisStrategy: 'DASH视频流转换分析',
+              videoSource: 'DASH转MP4'
+            };
+          }
+        } catch (dashError) {
+          console.log('DASH转换分析失败:', dashError);
+        }
+      }
+      
+      // 降级到增强多模态分析（封面+文本）
+      if (this.config.baseUrl.includes('modelscope.cn') && this.config.model && this.config.model.includes('VL')) {
+        try {
+          console.log('尝试增强多模态分析...');
+          const enhancedResult = await EnhancedVideoAnalyzer.analyzeWithFrames(videoInfo, this);
+          console.log('增强分析成功，策略:', enhancedResult.analysisStrategy);
+          return enhancedResult;
+        } catch (enhancedError) {
+          console.log('增强分析失败，降级到标准分析:', enhancedError);
+        }
+      }
+      
+      // 标准分析流程（兼容非VL模型或增强分析失败时）
+      return await this.generateStandardSummary(videoInfo);
+      
+    } catch (error) {
+      console.error('生成摘要失败:', error);
+      throw new Error(`生成摘要失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  async generateStandardSummary(videoInfo: VideoInfo): Promise<SummaryResult> {
+    try {
       // 根据baseURL判断使用哪种API格式
       let endpoint = '/v1/chat/completions';
       let messages: any[] = [];
@@ -76,73 +121,48 @@ export class ModelService {
         
         let messagesCreated = false;
         
-        // 尝试获取DASH视频流（最高优先级）
-        if (videoInfo.bvid) {
-          try {
-            const dashStreams = await VideoStreamExtractor.getDashStreams(videoInfo.bvid);
-            if (dashStreams && dashStreams.videoUrl) {
-              console.log('成功获取DASH视频流，质量:', dashStreams.quality);
-              
-              // 尝试使用视频流进行分析
-              messages = [
-                {
-                  role: 'user',
-                  content: [
-                    {
-                      type: 'video',
-                      video: dashStreams.videoUrl
-                    },
-                    {
-                      type: 'text',
-                      text: this.buildVideoAnalysisPrompt(videoInfo)
-                    }
-                  ]
-                }
-              ];
-              messagesCreated = true;
-            }
-          } catch (videoError) {
-            console.log('DASH视频流分析失败:', videoError);
-          }
-        }
-        
-        // 如果视频流分析失败，尝试获取封面图片
-        if (!messagesCreated) {
+        // 策略1: 尝试获取封面图片进行多模态分析
+        try {
           let coverImageUrl = await VideoStreamExtractor.getVideoCoverImage(videoInfo);
           console.log('封面图片URL:', coverImageUrl);
           
           if (coverImageUrl) {
-            // 如果只有封面图片，使用图片+文本分析
+            // 使用封面图片+文本分析（最可靠的多模态方案）
             messages = [
               {
                 role: 'user',
                 content: [
                   {
-                    type: 'image',
-                    image: coverImageUrl
+                    type: 'image_url',
+                    image_url: {
+                      url: coverImageUrl
+                    }
                   },
                   {
                     type: 'text',
-                    text: this.buildImageAnalysisPrompt(videoInfo)
+                    text: this.buildEnhancedMultimodalPrompt(videoInfo)
                   }
                 ]
               }
             ];
             messagesCreated = true;
+            console.log('使用封面图片多模态分析');
           }
+        } catch (imageError) {
+          console.log('封面图片分析失败:', imageError);
         }
         
-        // 如果无法获取任何媒体内容，退回到文本分析
+        // 如果图片分析失败，使用纯文本分析
         if (!messagesCreated) {
-          console.log('无法获取视频流或封面，使用文本分析模式');
-          messages = this.buildTextAnalysisMessages(videoInfo);
+          console.log('使用增强文本分析模式');
+          messages = this.buildEnhancedTextAnalysisMessages(videoInfo);
         }
       } else {
         // 普通文本模型格式
-        messages = this.buildTextAnalysisMessages(videoInfo);
+        messages = this.buildEnhancedTextAnalysisMessages(videoInfo);
       }
 
-      // 检查模型名称是否正确，如果不存在则使用可用的Qwen3-VL模型
+      // 检查模型名称是否正确
       let modelName = this.config.model || 'Qwen/Qwen3-VL-30B-A3B-Instruct';
       
       // 如果是指定的模型但API返回404，尝试使用可用的替代模型
@@ -159,7 +179,6 @@ export class ModelService {
 
       // 如果是ModelScope API，使用兼容模式
       if (this.config.baseUrl.includes('modelscope.cn')) {
-        // ModelScope可能需要额外的参数
         requestBody = {
           ...requestBody,
           enable_thinking: false  // 禁用思考模式以避免兼容性问题
@@ -175,12 +194,88 @@ export class ModelService {
 
       return this.parseSummary(content);
     } catch (error) {
-      console.error('生成摘要失败:', error);
-      throw new Error(`生成摘要失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      console.error('生成标准摘要失败:', error);
+      throw error;
     }
   }
 
-  private buildTextAnalysisMessages(videoInfo: VideoInfo): any[] {
+  async generateSummaryWithFrames(messages: any[]): Promise<SummaryResult> {
+    try {
+      // 检查模型名称
+      let modelName = this.config.model || 'Qwen/Qwen3-VL-30B-A3B-Instruct';
+      if (modelName === 'Qwen/Qwen3-VL-30B-A3B-Instruct') {
+        modelName = 'Qwen/Qwen3-VL-8B-Instruct';
+      }
+
+      let requestBody: any = {
+        model: modelName,
+        messages: messages,
+        max_tokens: 2000,
+        temperature: 0.7
+      };
+
+      if (this.config.baseUrl.includes('modelscope.cn')) {
+        requestBody.enable_thinking = false;
+      }
+      
+      const response = await this.axiosInstance.post('/v1/chat/completions', requestBody);
+
+      const content = response.data.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('模型返回内容为空');
+      }
+
+      return {
+        ...this.parseSummary(content),
+        analysisStrategy: '多帧分析'
+      };
+    } catch (error) {
+      console.error('多帧分析失败:', error);
+      throw error;
+    }
+  }
+
+  private buildEnhancedMultimodalPrompt(videoInfo: VideoInfo): string {
+    return `请基于封面图片和以下B站视频信息，提供全面深入的多模态分析：
+
+📊 **视频元数据**：
+- 标题：${videoInfo.title}
+- ${videoInfo.duration ? `时长：${Math.floor(videoInfo.duration / 60)}分${videoInfo.duration % 60}秒` : '时长：未知'}
+${videoInfo.bvid ? `- BV号：${videoInfo.bvid}` : ''}
+${videoInfo.url ? `- 链接：${videoInfo.url}` : ''}
+
+🎯 **多模态分析要求**：
+
+请仔细观察封面图片，并结合视频信息，提供以下专业分析：
+
+1. **📸 封面视觉分析**（100-150字）
+   - 详细描述封面中的场景、人物、色彩、构图
+   - 分析视觉风格（写实/动漫/抽象等）
+   - 识别封面传达的情绪和氛围
+   - 判断封面的专业制作水准
+
+2. **🎬 内容类型推测**（150-200字）
+   - 基于视觉元素，推测视频的核心主题
+   - 分析可能的内容结构（故事性/科普性/娱乐性）
+   - 预测视频的高潮部分或关键信息点
+   - 判断内容的原创性或转载性质
+
+3. **👥 目标受众画像**
+   - 分析封面设计针对的年龄层和兴趣群体
+   - 推测观众的专业知识背景需求
+   - 判断内容的普适性或垂直领域特征
+   - 评估社交传播潜力和话题性
+
+4. **⭐ 质量与价值评估**
+   - 基于封面质量和标题吸引力，评估制作投入
+   - 预测内容的观看价值和信息密度
+   - 分析在同类内容中的竞争力
+   - 提供观看建议和预期管理
+
+请确保分析专业、客观、有洞察力，帮助用户通过封面图片就能对视频内容做出准确判断。`;
+  }
+
+  private buildEnhancedTextAnalysisMessages(videoInfo: VideoInfo): any[] {
     const prompt = `请基于以下B站视频信息进行深度分析和内容推测：
 
 🎬 **视频基本信息**：

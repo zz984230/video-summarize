@@ -11,6 +11,8 @@ export interface SummaryResult {
   overall: string;
   segments: VideoSegment[];
   timestamp: number;
+  analysisStrategy?: string;
+  frameCount?: number;
 }
 
 export interface VideoSegment {
