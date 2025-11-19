@@ -74,53 +74,66 @@ export class ModelService {
       if (this.config.baseUrl.includes('modelscope.cn') && this.config.model && this.config.model.includes('VL')) {
         console.log('尝试使用VL模型进行视频分析...');
         
-        // 尝试获取视频流URL
-        let videoStreamUrl = null;
+        let messagesCreated = false;
+        
+        // 尝试获取DASH视频流（最高优先级）
         if (videoInfo.bvid) {
-          videoStreamUrl = await VideoStreamExtractor.getVideoStreamUrl(videoInfo.bvid);
-          console.log('视频流URL获取结果:', videoStreamUrl ? '成功' : '失败');
+          try {
+            const dashStreams = await VideoStreamExtractor.getDashStreams(videoInfo.bvid);
+            if (dashStreams && dashStreams.videoUrl) {
+              console.log('成功获取DASH视频流，质量:', dashStreams.quality);
+              
+              // 尝试使用视频流进行分析
+              messages = [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'video',
+                      video: dashStreams.videoUrl
+                    },
+                    {
+                      type: 'text',
+                      text: this.buildVideoAnalysisPrompt(videoInfo)
+                    }
+                  ]
+                }
+              ];
+              messagesCreated = true;
+            }
+          } catch (videoError) {
+            console.log('DASH视频流分析失败:', videoError);
+          }
         }
         
-        // 尝试获取封面图片
-        let coverImageUrl = await VideoStreamExtractor.getVideoCoverImage(videoInfo);
-        console.log('封面图片URL:', coverImageUrl);
+        // 如果视频流分析失败，尝试获取封面图片
+        if (!messagesCreated) {
+          let coverImageUrl = await VideoStreamExtractor.getVideoCoverImage(videoInfo);
+          console.log('封面图片URL:', coverImageUrl);
+          
+          if (coverImageUrl) {
+            // 如果只有封面图片，使用图片+文本分析
+            messages = [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image',
+                    image: coverImageUrl
+                  },
+                  {
+                    type: 'text',
+                    text: this.buildImageAnalysisPrompt(videoInfo)
+                  }
+                ]
+              }
+            ];
+            messagesCreated = true;
+          }
+        }
         
-        if (videoStreamUrl) {
-          // 如果成功获取到视频流URL，尝试视频分析
-          messages = [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'video',
-                  video: videoStreamUrl
-                },
-                {
-                  type: 'text',
-                  text: this.buildVideoAnalysisPrompt(videoInfo)
-                }
-              ]
-            }
-          ];
-        } else if (coverImageUrl) {
-          // 如果只有封面图片，使用图片+文本分析
-          messages = [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  image: coverImageUrl
-                },
-                {
-                  type: 'text',
-                  text: this.buildImageAnalysisPrompt(videoInfo)
-                }
-              ]
-            }
-          ];
-        } else {
-          // 如果无法获取媒体内容，退回到文本分析
+        // 如果无法获取任何媒体内容，退回到文本分析
+        if (!messagesCreated) {
           console.log('无法获取视频流或封面，使用文本分析模式');
           messages = this.buildTextAnalysisMessages(videoInfo);
         }
@@ -168,17 +181,50 @@ export class ModelService {
   }
 
   private buildTextAnalysisMessages(videoInfo: VideoInfo): any[] {
-    const prompt = `请根据以下B站视频信息生成详细的摘要和分析：
+    const prompt = `请基于以下B站视频信息进行深度分析和内容推测：
 
-视频标题：${videoInfo.title}
-视频链接：${videoInfo.url}
-${videoInfo.duration ? `视频时长：${Math.floor(videoInfo.duration / 60)}分${videoInfo.duration % 60}秒` : ''}
+🎬 **视频基本信息**：
+- 标题：${videoInfo.title}
+- 链接：${videoInfo.url}
+- ${videoInfo.duration ? `时长：${Math.floor(videoInfo.duration / 60)}分${videoInfo.duration % 60}秒` : '时长：未知'}
+${videoInfo.bvid ? `- BV号：${videoInfo.bvid}` : ''}
+${videoInfo.cid ? `- CID：${videoInfo.cid}` : ''}
 
-请提供以下内容：
-1. 视频整体摘要（200-300字）：根据标题和时长等信息，推测视频的主要内容和核心观点
-2. 分段内容分析：基于典型视频结构，提供可能的内容分段分析
+🔍 **智能内容分析要求**：
 
-请确保分析合理、详细，便于用户快速了解视频可能的内容。`;
+请基于B站视频的特点和标题语义，提供以下专业分析：
+
+1. **📊 标题深度解析**（100-150字）
+   - 拆解标题关键词和情感色彩
+   - 分析标题的吸引力和传播潜力
+   - 识别可能的内容类型和创作风格
+   - 判断是否存在热门话题或争议点
+
+2. **🎯 内容方向预测**（200-300字）
+   - 基于标题和时长，推测视频的核心内容和论述逻辑
+   - 预测可能的分段结构和内容重点
+   - 分析创作者的表达目的和预期效果
+   - 判断内容的信息密度和观看价值
+
+3. **👥 目标受众画像**
+   - 推测主要观众群体的年龄、兴趣和需求
+   - 分析内容的普适性或垂直领域特征
+   - 预测观众的观看场景和期望收获
+   - 评估内容的社交传播潜力
+
+4. **📈 质量与价值评估**
+   - 基于标题专业性，推测制作水准和内容深度
+   - 评估视频的娱乐性、教育性或实用性价值
+   - 判断内容在同类视频中的竞争力
+   - 预测可能的互动数据和用户反馈
+
+5. **⚠️ 观看建议与预期管理**
+   - 为潜在观众提供观看建议
+   - 设定合理的内容预期
+   - 指出可能的时间投入与价值回报
+   - 推荐适合的观看场景和心态
+
+请确保分析专业、深入、有洞察力，帮助用户在没有观看视频的情况下，也能对其内容质量和价值做出准确判断。`;
 
     return [
       {
@@ -212,19 +258,42 @@ ${videoInfo.duration ? `视频时长：${Math.floor(videoInfo.duration / 60)}分
   }
 
   private buildImageAnalysisPrompt(videoInfo: VideoInfo): string {
-    return `请分析这张图片（视频封面），并结合视频信息提供分析：
+    return `请详细分析这张图片（视频封面），并结合视频标题和时长信息，提供全面深入的分析：
 
 视频标题：${videoInfo.title}
 视频时长：${videoInfo.duration ? `${Math.floor(videoInfo.duration / 60)}分${videoInfo.duration % 60}秒` : '未知'}
+视频链接：${videoInfo.url}
 
-请仔细观察图片内容，并结合视频标题和时长信息，提供以下分析：
-1. 封面图片内容描述：详细描述图片中的场景、人物、物体等
-2. 视频内容推测：基于封面和标题，推测视频可能的主要内容
-3. 风格和类型分析：分析视频可能的风格（如教育、娱乐、科技等）
-4. 目标受众分析：推测视频的目标观看群体
-5. 内容质量评估：基于封面设计质量，评估视频制作水平
+请仔细观察图片内容，并结合B站视频的特点，提供以下详细分析：
 
-请提供合理、详细的分析，帮助用户了解这个视频。`;
+📸 **封面图片内容描述**：
+- 详细描述图片中的场景、环境、背景
+- 识别并描述出现的人物（数量、外貌特征、表情、动作、服装等）
+- 描述图片中的主要物体、道具、标识等
+- 分析图片的构图、色彩搭配、视觉效果
+
+🎬 **视频内容深度推测**：
+- 基于封面和标题，推测视频的核心主题和主要内容
+- 分析可能的故事情节或论述逻辑
+- 预测视频的高潮部分或关键信息点
+- 推测视频的创作目的和想要传达的信息
+
+🎯 **风格和类型分析**：
+- 判断视频类型（如：vlog、教学、评测、娱乐、新闻、纪录片等）
+- 分析视频风格（如：正式/轻松、专业/业余、创意/传统）
+- 推测制作水准和投入程度
+
+👥 **目标受众分析**：
+- 分析视频的主要目标观看群体
+- 推测观众的年龄层、兴趣爱好、专业知识水平
+- 分析内容的普适性或专业性
+
+⭐ **内容价值评估**：
+- 基于封面设计质量和标题吸引力，评估视频的商业价值
+- 推测内容的信息密度和实用价值
+- 分析可能的互动性和传播潜力
+
+请提供详细、准确、有洞察力的分析，帮助用户快速判断这个视频是否值得观看，以及预期能看到什么内容。`;
   }
 
   private parseSummary(content: string): SummaryResult {
