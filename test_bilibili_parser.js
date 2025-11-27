@@ -46,6 +46,10 @@ async function fetch(url, options = {}) {
         });
         
         req.on('error', reject);
+        
+        if (options.body) {
+            req.write(options.body);
+        }
         req.end();
     });
 }
@@ -516,26 +520,23 @@ async function testUrlAccessibility(url, label) {
 async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle) {
     const base_url = 'https://api-inference.modelscope.cn/v1';
     const api_key = 'ms-871280c4-7729-4d3c-bc74-9fbd22dd9660';
-    const model = 'Qwen/Qwen3-VL-8B-Instruct';  // 使用Qwen3-VL-8B-Instruct模型
     
     console.log('\n🤖 开始多模态模型视频分析...');
     console.log(`📹 视频标题: ${videoTitle}`);
     console.log(`🔗 视频地址: ${videoUrl.substring(0, 100)}...`);
     
     try {
-        const messages = [
-              {
-                role: 'user',
-                content: 'hello'
-              }
-            ];
-        
         const requestBody = {
             model: 'Qwen/Qwen3-VL-8B-Instruct',
-            messages: messages,
+            messages: [
+                {
+                    role: 'user',
+                    content: `请分析这个视频的内容并生成摘要。视频标题：${videoTitle}，视频地址：${videoUrl}。请提供视频的主要内容、关键信息和观看建议。`
+                }
+            ],
+            max_tokens: 500,
+            temperature: 0.7
         };
-        
-        console.log('调试信息: 请求体:', JSON.stringify(requestBody, null, 2));
         
         const response = await fetch(`${base_url}/chat/completions`, {
             method: 'POST',
@@ -543,16 +544,16 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle) {
                 'Authorization': `Bearer ${api_key}`,
                 'Content-Type': 'application/json',
             },
-            body: requestBody
+            body: JSON.stringify(requestBody)
         });
         
+        const responseText = await response.text();
+        
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('调试信息: API错误响应:', errorText);
-            throw new Error(`多模态模型API请求失败: ${response.status} - ${errorText}`);
+            throw new Error(`多模态模型API请求失败: ${response.status} - ${responseText}`);
         }
         
-        const data = await response.json();
+        const data = JSON.parse(responseText);
         
         if (data.error) {
             throw new Error(`多模态模型API返回错误: ${data.error.message}`);
@@ -569,7 +570,7 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle) {
         return {
             success: true,
             summary: analysisResult,
-            model: model,
+            model: 'Qwen/Qwen3-VL-8B-Instruct',
             videoUrl: videoUrl,
             videoTitle: videoTitle
         };
