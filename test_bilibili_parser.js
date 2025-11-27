@@ -337,7 +337,7 @@ async function testBilibiliParser() {
     console.log('🧪 B站视频解析器测试开始');
     console.log('='.repeat(60));
     
-    const testUrl = 'https://www.bilibili.com/video/BV19UUYBBEU1/?spm_id_from=333.1007.tianma.1-1-1.click&vd_source=cacd624f81e5de87dc7c83443a26ada9';
+    const testUrl = 'https://www.bilibili.com/video/BV1CQSMBWEU5/?spm_id_from=333.1387.homepage.video_card.click&vd_source=cacd624f81e5de87dc7c83443a26ada9';
     
     // 对比Snapany提供的可访问URL
     const snapanyWorkingUrl = 'https://upos-sz-estgoss.bilivideo.com/upgcxcode/85/99/34277689985/34277689985-1-192.mp4?e=ig8euxZM2rNcNbRV7wdVhwdlhWdMhwdVhoNvNC8BqJIzNbfq9rVEuxTEnE8L5F6VnEsSTx0vkX8fqJeYTj_lta53NCM=&deadline=1764179989&uipk=5&os=estgoss&og=ali&oi=1782024106&nbs=1&platform=html5&trid=a7905328defd48b48382e8c85d2ea25h&mid=0&gen=playurlv3&upsig=9230d00498603b798bd0aa2a69dcd05f&uparams=e,deadline,uipk,os,og,oi,nbs,platform,trid,mid,gen&bvc=vod&nettype=0&bw=839770&buvid=&build=0&dl=0&f=h_0_0&agrr=0&orderid=0,1';
@@ -397,19 +397,28 @@ async function testBilibiliParser() {
             console.log(`📊 MP4格式: 完整视频文件，适合直接下载播放`);
             
             // 显示文件大小对比（如果有数据）
-            const dashFirstVideo = resultDash.downloadUrls[0].urls.video?.[0];
             const mp4FirstSegment = resultMp4.downloadUrls[0].urls[0];
             
-            if (dashFirstVideo && mp4FirstSegment) {
-                console.log(`📦 DASH视频大小: ${formatSize(dashFirstVideo.size)}`);
+            if (mp4FirstSegment) {
                 console.log(`📦 MP4分段大小: ${formatSize(mp4FirstSegment.size)}`);
                 
                 // 测试URL可访问性
                 console.log('\n🔍 URL可访问性测试:');
                 await testUrlAccessibility(snapanyWorkingUrl, 'Snapany URL (已知可用)');
                 await testUrlAccessibility(mp4FirstSegment.url, '我们的MP4 URL');
-                if (dashFirstVideo) {
-                    await testUrlAccessibility(dashFirstVideo.url, '我们的DASH URL');
+                
+                // 使用多模态模型分析MP4视频
+                console.log('\n🤖 多模态模型视频分析:');
+                console.log('='.repeat(50));
+                const analysisResult = await analyzeVideoWithMultimodalModel(
+                    mp4FirstSegment.url,
+                    resultMp4.videoInfo.title
+                );
+                
+                if (analysisResult.success) {
+                    console.log('✅ 视频分析完成，摘要已生成');
+                } else {
+                    console.log('❌ 视频分析失败:', analysisResult.error);
                 }
             }
         } else if (resultMp4.success) {
@@ -495,6 +504,84 @@ async function testUrlAccessibility(url, label) {
     } catch (error) {
         console.log(`❌ ${label} - 访问错误: ${error.message}`);
         return false;
+    }
+}
+
+/**
+ * 使用多模态模型分析视频摘要
+ * @param {string} videoUrl - 视频地址
+ * @param {string} videoTitle - 视频标题
+ * @returns {Promise<Object>} 分析结果
+ */
+async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle) {
+    const base_url = 'https://api-inference.modelscope.cn/v1';
+    const api_key = 'ms-871280c4-7729-4d3c-bc74-9fbd22dd9660';
+    const model = 'Qwen/Qwen3-VL-8B-Instruct';  // 使用Qwen3-VL-8B-Instruct模型
+    
+    console.log('\n🤖 开始多模态模型视频分析...');
+    console.log(`📹 视频标题: ${videoTitle}`);
+    console.log(`🔗 视频地址: ${videoUrl.substring(0, 100)}...`);
+    
+    try {
+        const messages = [
+              {
+                role: 'user',
+                content: 'hello'
+              }
+            ];
+        
+        const requestBody = {
+            model: 'Qwen/Qwen3-VL-8B-Instruct',
+            messages: messages,
+        };
+        
+        console.log('调试信息: 请求体:', JSON.stringify(requestBody, null, 2));
+        
+        const response = await fetch(`${base_url}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${api_key}`,
+                'Content-Type': 'application/json',
+            },
+            body: requestBody
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('调试信息: API错误响应:', errorText);
+            throw new Error(`多模态模型API请求失败: ${response.status} - ${errorText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(`多模态模型API返回错误: ${data.error.message}`);
+        }
+        
+        const analysisResult = data.choices[0].message.content;
+        
+        console.log('✅ 多模态模型分析成功完成');
+        console.log('\n📊 视频分析摘要:');
+        console.log('='.repeat(50));
+        console.log(analysisResult);
+        console.log('='.repeat(50));
+        
+        return {
+            success: true,
+            summary: analysisResult,
+            model: model,
+            videoUrl: videoUrl,
+            videoTitle: videoTitle
+        };
+        
+    } catch (error) {
+        console.error('❌ 多模态模型分析失败:', error.message);
+        return {
+            success: false,
+            error: error.message,
+            videoUrl: videoUrl,
+            videoTitle: videoTitle
+        };
     }
 }
 
