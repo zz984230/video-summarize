@@ -42,7 +42,19 @@ export class DashToMp4Converter {
     quality: string;
   } | null> {
     try {
-      const response = await fetch(`https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=80&fnval=4048&fourk=1`);
+      const response = await fetch(`https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=80&fnval=4048&fourk=1`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': `https://www.bilibili.com/video/${bvid}`,
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-site'
+        }
+      });
       const data = await response.json();
       
       if (data.code !== 0 || !data.data?.dash) {
@@ -64,12 +76,16 @@ export class DashToMp4Converter {
       const audioSegments = [];
       
       for (let i = 1; i <= 5; i++) {
-        videoSegments.push(baseVideoUrl.replace('-1-30032.m4s', `-${i}-30032.m4s`));
-        audioSegments.push(baseAudioUrl.replace('-1-30280.m4s', `-${i}-30280.m4s`));
+        // 使用更标准的片段URL构建方式
+        const videoSegmentUrl = baseVideoUrl.replace(/-\d+-\d+\.m4s$/, `-${i}-30032.m4s`);
+        const audioSegmentUrl = baseAudioUrl.replace(/-\d+-\d+\.m4s$/, `-${i}-30280.m4s`);
+        
+        videoSegments.push(videoSegmentUrl);
+        audioSegments.push(audioSegmentUrl);
       }
       
       return {
-        initSegment: baseVideoUrl.replace(/-\d+-\d+\.m4s$/, '-1-30032.m4s').replace(/\d+\.m4s$/, 'init.mp4'),
+        initSegment: baseVideoUrl, // 使用baseUrl作为初始化片段
         videoSegments,
         audioSegments,
         quality: this.getQualityText(videoStream.id)
@@ -135,13 +151,34 @@ export class DashToMp4Converter {
       try {
         console.log(`📥 下载片段 (尝试 ${attempt}/${maxRetries}): ${url.substring(0, 50)}...`);
         
+        // 解析URL获取参数
+        const urlObj = new URL(url);
+        const params = new URLSearchParams(urlObj.search);
+        
+        // 构建完整的请求头，包含所有必要的参数
         const response = await fetch(url, {
           headers: {
             'Referer': 'https://www.bilibili.com',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'video',
+            'Sec-Fetch-Mode': 'no-cors',
+            'Sec-Fetch-Site': 'cross-site',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            // 添加B站特定的头信息
+            'Origin': 'https://www.bilibili.com',
+            'Range': 'bytes=0-', // 请求从开头下载
+            'TE': 'trailers'
           },
           // 添加超时机制
-          signal: AbortSignal.timeout(30000) // 30秒超时
+          signal: AbortSignal.timeout(30000), // 30秒超时
+          // 确保以匿名模式发送请求，避免cookie问题
+          credentials: 'omit',
+          mode: 'cors'
         });
         
         if (!response.ok) {
@@ -306,15 +343,34 @@ export class EnhancedVideoAnalyzerPro {
     try {
       console.log('🎬 开始DASH视频流分析...');
       
+      // 补全 bvid
+      if (!videoInfo.bvid && videoInfo.url) {
+        const match = String(videoInfo.url).match(/\/video\/(BV[\w]+)/);
+        if (match) {
+          videoInfo.bvid = match[1];
+        }
+      }
+
+      // 补全 cid（优先使用API获取pages对应cid）
+      if (!videoInfo.cid && videoInfo.bvid) {
+        const resolvedCid = await this.getCidFromApi(videoInfo.bvid, videoInfo.url);
+        if (resolvedCid) {
+          videoInfo.cid = resolvedCid;
+          console.log(`✅ 自动补全CID成功: ${resolvedCid}`);
+        }
+      }
+
+      // 若仍缺失，走备用分析而非中断
       if (!videoInfo.bvid || !videoInfo.cid) {
-        throw new Error('缺少BV号或CID信息');
+        console.warn('⚠️ 无法补全BV或CID，使用备用分析方案');
+        return await this.analyzeWithFallback(videoInfo, modelService);
       }
       
       // 1. 获取DASH片段信息
       const dashInfo = await DashToMp4Converter.getDashSegmentUrls(
         videoInfo.url, 
         videoInfo.bvid, 
-        parseInt(videoInfo.cid)
+        parseInt(String(videoInfo.cid), 10)
       );
       
       if (!dashInfo) {
@@ -327,7 +383,54 @@ export class EnhancedVideoAnalyzerPro {
       // 2. 转换为MP4格式
       const mp4Data = await DashToMp4Converter.convertDashToMp4(dashInfo);
       if (!mp4Data) {
-        throw new Error('DASH转换失败');
+        console.log('🔄 DASH转换失败，尝试获取完整视频流URL...');
+        
+        try {
+          const { VideoStreamExtractor } = await import('./videoStreamExtractor');
+          const streamUrl = await VideoStreamExtractor.getVideoStreamUrl(videoInfo.bvid);
+          
+          if (streamUrl) {
+            console.log('✅ 成功获取完整视频流URL，尝试直接分析...');
+            
+            // 使用完整视频流URL直接分析
+            const messages = [{
+              role: 'user',
+              content: [
+                {
+                  type: 'video',
+                  video: streamUrl
+                },
+                {
+                  type: 'text',
+                  text: this.buildVideoAnalysisPrompt(videoInfo, streamUrl)
+                }
+              ]
+            }];
+            
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('VL模型分析超时')), 120000)
+            );
+            
+            const analysisPromise = modelService.generateSummaryWithFrames(messages);
+            const retryTimeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('VL模型分析超时')), 120000)
+            );
+            const result = await Promise.race([analysisPromise, retryTimeoutPromise]);
+            
+            return {
+              ...result,
+              analysisStrategy: '完整视频流URL分析',
+              videoUrl: streamUrl,
+              fallbackReason: 'DASH片段下载失败'
+            };
+          } else {
+            console.log('⚠️ 无法获取完整视频流URL，降级到封面图片分析');
+            return await this.analyzeWithCoverImageFallback(videoInfo, modelService);
+          }
+        } catch (streamError) {
+           console.log('⚠️ 获取完整视频流URL失败，降级到封面图片分析:', streamError instanceof Error ? streamError.message : String(streamError));
+           return await this.analyzeWithCoverImageFallback(videoInfo, modelService);
+         }
       }
       
       console.log(`✅ DASH转换成功: 视频${(mp4Data.videoBlob.size / 1024 / 1024).toFixed(1)}MB, ${mp4Data.duration}秒`);
@@ -359,6 +462,51 @@ export class EnhancedVideoAnalyzerPro {
     } catch (error) {
       console.error('DASH视频流分析失败:', error);
       return await this.analyzeWithFallback(videoInfo, modelService);
+    }
+  }
+
+  /**
+   * 通过B站API解析CID（支持多分P）
+   */
+  private static async getCidFromApi(bvid: string, url?: string): Promise<string | undefined> {
+    try {
+      const api = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+      const resp = await fetch(api, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': `https://www.bilibili.com/video/${bvid}`,
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-site'
+        }
+      });
+      if (!resp.ok) return undefined;
+      const json = await resp.json();
+      if (json.code !== 0 || !json.data) return undefined;
+      const data = json.data;
+      const p = (() => {
+        try {
+          if (!url) return 1;
+          const u = new URL(url);
+          const pv = u.searchParams.get('p');
+          return pv ? parseInt(pv, 10) || 1 : 1;
+        } catch {
+          return 1;
+        }
+      })();
+      if (Array.isArray(data.pages) && data.pages.length > 0) {
+        const idx = Math.max(0, Math.min(data.pages.length - 1, p - 1));
+        const cid = data.pages[idx]?.cid;
+        if (cid) return String(cid);
+      }
+      if (data.cid) return String(data.cid);
+      return undefined;
+    } catch {
+      return undefined;
     }
   }
   
@@ -400,11 +548,53 @@ export class EnhancedVideoAnalyzerPro {
       const errorMessage = vlError instanceof Error ? vlError.message : String(vlError);
       console.error('❌ VL模型分析失败:', errorMessage);
       
-      // 如果是视频格式问题，尝试降级到封面图片分析
+      // 如果是视频格式问题，尝试使用完整视频流URL
       if (errorMessage?.includes('video') || errorMessage?.includes('format') || 
           errorMessage?.includes('timeout') || errorMessage?.includes('timeout')) {
-        console.log('🔄 尝试降级到封面图片分析...');
-        return await this.analyzeWithCoverImageFallback(videoInfo, modelService);
+        console.log('🔄 尝试使用完整视频流URL进行分析...');
+        
+        try {
+          // 尝试获取完整的视频流URL
+          const { VideoStreamExtractor } = await import('./videoStreamExtractor');
+          const streamUrl = await VideoStreamExtractor.getVideoStreamUrl(videoInfo.bvid);
+          
+          if (streamUrl) {
+            console.log('✅ 成功获取完整视频流URL，重新尝试分析...');
+            
+            // 使用完整视频流URL重新尝试分析
+            const messages = [{
+              role: 'user',
+              content: [
+                {
+                  type: 'video',
+                  video: streamUrl
+                },
+                {
+                  type: 'text',
+                  text: this.buildVideoAnalysisPrompt(videoInfo, streamUrl)
+                }
+              ]
+            }];
+            
+            const analysisPromise = modelService.generateSummaryWithFrames(messages);
+            const retryTimeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('VL模型分析超时')), 120000)
+            );
+            const result = await Promise.race([analysisPromise, retryTimeoutPromise]);
+            
+            return {
+              ...result,
+              analysisStrategy: '完整视频流URL分析',
+              videoUrl: streamUrl
+            };
+          } else {
+            console.log('⚠️ 无法获取完整视频流URL，降级到封面图片分析');
+            return await this.analyzeWithCoverImageFallback(videoInfo, modelService);
+          }
+        } catch (streamError) {
+           console.log('⚠️ 获取完整视频流URL失败，降级到封面图片分析:', streamError instanceof Error ? streamError.message : String(streamError));
+           return await this.analyzeWithCoverImageFallback(videoInfo, modelService);
+         }
       }
       
       throw vlError;

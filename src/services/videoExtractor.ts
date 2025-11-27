@@ -159,8 +159,19 @@ export class VideoExtractor {
       }
 
       // 从window对象获取
-      if ((window as any).__INITIAL_STATE__?.videoData?.cid) {
-        return (window as any).__INITIAL_STATE__.videoData.cid;
+      const initial = (window as any).__INITIAL_STATE__;
+      if (initial?.videoData?.cid) {
+        return String(initial.videoData.cid);
+      }
+
+      // 兼容多分P：从 pages 中选择对应分P的 cid
+      if (initial?.videoData?.pages && Array.isArray(initial.videoData.pages)) {
+        const pParam = urlParams.get('p');
+        const index = Math.max(0, (pParam ? parseInt(pParam, 10) : 1) - 1);
+        const page = initial.videoData.pages[index] || initial.videoData.pages[0];
+        if (page?.cid) {
+          return String(page.cid);
+        }
       }
 
       return undefined;
