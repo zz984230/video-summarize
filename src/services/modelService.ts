@@ -77,7 +77,46 @@ export class ModelService {
     try {
       console.log('开始生成视频摘要，使用增强分析策略...');
       
-      // 优先尝试DASH到MP4转换分析（最新技术方案）
+      // 优先尝试使用 test_bilibili_parser.js 的视频解析和多模态分析
+      if (this.config.baseUrl.includes('modelscope.cn') && this.config.model && this.config.model.includes('VL')) {
+        try {
+          console.log('🎬 尝试使用 test_bilibili_parser.js 的视频解析和多模态分析...');
+          
+          // 导入 videoExtractor 获取增强的视频信息
+          const { BilibiliVideoParser } = await import('./videoExtractor');
+          const parser = new BilibiliVideoParser();
+          
+          // 解析视频获取下载地址
+          const parseResult = await parser.parseVideo(videoInfo.url, 64); // 720P质量
+          
+          if (parseResult.success && parseResult.downloadUrls.length > 0 && parseResult.downloadUrls[0].urls.length > 0) {
+            const firstVideoUrl = parseResult.downloadUrls[0].urls[0].url;
+            console.log('✅ 视频解析成功，使用多模态模型分析...');
+            
+            // 使用多模态模型分析视频
+            const analysisResult = await this.analyzeVideoWithMultimodalModel(
+              firstVideoUrl,
+              parseResult.videoInfo.title
+            );
+            
+            if (analysisResult.success && analysisResult.summary) {
+              console.log('✅ test_bilibili_parser.js 多模态分析成功！');
+              return {
+                summary: analysisResult.summary,
+                analysisStrategy: 'test_bilibili_parser.js 多模态分析',
+                videoSource: 'B站MP4视频流',
+                model: analysisResult.model || this.config.model,
+                success: true,
+                timestamp: Date.now()
+              };
+            }
+          }
+        } catch (parserError) {
+          console.log('test_bilibili_parser.js 分析失败:', parserError);
+        }
+      }
+      
+      // 降级到DASH到MP4转换分析（最新技术方案）
       if (this.config.baseUrl.includes('modelscope.cn') && this.config.model && this.config.model.includes('VL')) {
         try {
           console.log('🎬 尝试DASH视频流转换分析...');
@@ -311,6 +350,85 @@ export class ModelService {
     } catch (error) {
       console.error('多帧分析失败:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 使用多模态模型分析视频（基于 test_bilibili_parser.js 的实现）
+   * @param videoUrl - 视频地址
+   * @param videoTitle - 视频标题
+   * @returns 分析结果
+   */
+  async analyzeVideoWithMultimodalModel(videoUrl: string, videoTitle: string): Promise<{
+    success: boolean;
+    summary?: string;
+    error?: string;
+    model?: string;
+    videoUrl?: string;
+    videoTitle?: string;
+  }> {
+    const base_url = this.config.baseUrl;
+    const api_key = this.config.apiKey;
+    
+    console.log('\n🤖 开始多模态模型视频分析...');
+    console.log(`📹 视频标题: ${videoTitle}`);
+    console.log(`🔗 视频地址: ${videoUrl}...`);
+    
+    try {
+      // 构建多模态内容
+      const content = [
+        {
+          type: 'video_url' as const,
+          video_url: videoUrl
+        },
+        {
+          type: 'text' as const,
+          text: `分析这个视频并提取摘要信息。`
+        }
+      ];
+      
+      const requestBody = {
+        model: this.config.model || 'Qwen/Qwen3-VL-8B-Instruct',
+        messages: [
+          {
+            role: 'user',
+            content: content
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.7
+      };
+      
+      const response = await this.axiosInstance.post('/v1/chat/completions', requestBody);
+      
+      const analysisResult = response.data.choices[0]?.message?.content;
+      
+      if (!analysisResult) {
+        throw new Error('模型返回内容为空');
+      }
+      
+      console.log('✅ 多模态模型分析成功完成');
+      console.log('\n📊 视频分析结果:');
+      console.log('='.repeat(60));
+      console.log(analysisResult);
+      console.log('='.repeat(60));
+      
+      return {
+        success: true,
+        summary: analysisResult,
+        model: this.config.model || 'Qwen/Qwen3-VL-8B-Instruct',
+        videoUrl: videoUrl,
+        videoTitle: videoTitle
+      };
+      
+    } catch (error) {
+      console.error('❌ 多模态模型分析失败:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '未知错误',
+        videoUrl: videoUrl,
+        videoTitle: videoTitle
+      };
     }
   }
 

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站视频摘要助手</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>B站视频摘要助手</h1>
+            <div class="version">v2.0.0</div>
+        </div>
+
+        <!-- API配置 -->
+        <div class="section api-config">
+            <h3>API配置</h3>
+            <div class="form-group">
+                <label for="apiKey">ModelScope API密钥:</label>
+                <input type="password" id="apiKey" placeholder="输入您的API密钥">
+                <button id="testApiKey" class="btn-secondary">测试</button>
+            </div>
+            <div class="form-group">
+                <label for="modelName">模型选择:</label>
+                <select id="modelName">
+                    <option value="Qwen/Qwen3-VL-8B-Instruct">Qwen3-VL-8B-Instruct</option>
+                    <option value="Qwen/Qwen2-VL-7B-Instruct">Qwen2-VL-7B-Instruct</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 视频信息 -->
+        <div class="section video-info">
+            <h3>当前视频</h3>
+            <div id="videoInfo" class="video-details">
+                <div class="loading">正在获取视频信息...</div>
+            </div>
+        </div>
+
+        <!-- 分析选项 -->
+        <div class="section analysis-options">
+            <h3>分析选项</h3>
+            <div class="checkbox-group">
+                <label><input type="checkbox" id="generalAnalysis" checked> 通用摘要</label>
+                <label><input type="checkbox" id="technicalAnalysis"> 技术分析</label>
+                <label><input type="checkbox" id="educationalAnalysis"> 教育分析</label>
+                <label><input type="checkbox" id="entertainmentAnalysis"> 娱乐分析</label>
+                <label><input type="checkbox" id="summaryAnalysis" checked> 总结</label>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="section actions">
+            <button id="analyzeVideo" class="btn-primary">开始分析</button>
+            <button id="stopAnalysis" class="btn-danger" disabled>停止分析</button>
+        </div>
+
+        <!-- 进度显示 -->
+        <div class="section progress-section">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="progressText" class="progress-text">准备就绪</div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div class="section results">
+            <h3>分析结果</h3>
+            <div id="analysisResults" class="results-container">
+                <div class="placeholder">点击"开始分析"获取视频摘要</div>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="section result-actions">
+            <button id="copyResults" class="btn-secondary" disabled>复制结果</button>
+            <button id="saveResults" class="btn-secondary" disabled>保存结果</button>
+            <button id="clearResults" class="btn-secondary">清除结果</button>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="section history">
+            <h3>历史记录</h3>
+            <div id="historyList" class="history-list">
+                <div class="placeholder">暂无历史记录</div>
+            </div>
+        </div>
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <div id="statusText">就绪</div>
+            <div id="errorText" class="error-text"></div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

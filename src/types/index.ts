@@ -8,11 +8,15 @@ export interface VideoInfo {
 }
 
 export interface SummaryResult {
-  overall: string;
-  segments: VideoSegment[];
+  overall?: string;
+  summary?: string;
+  segments?: VideoSegment[];
   timestamp: number;
   analysisStrategy?: string;
   frameCount?: number;
+  videoSource?: string;
+  model?: string;
+  success?: boolean;
 }
 
 export interface VideoSegment {

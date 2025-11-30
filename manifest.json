@@ -2,34 +2,46 @@
   "manifest_version": 3,
   "name": "B站视频摘要助手",
   "version": "1.0.0",
-  "description": "自动提取B站视频链接并通过大模型生成视频摘要",
+  "description": "基于多模态AI技术的B站视频内容分析和摘要工具",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
-    "https://*.bilibili.com/*",
+    "https://www.bilibili.com/*",
+    "https://api.bilibili.com/*",
+    "https://api-inference.modelscope.cn/*",
     "https://*/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.bilibili.com/*"],
-      "js": ["content.js"],
+      "matches": ["https://www.bilibili.com/*"],
+      "js": ["src/content.js"],
+      "css": ["styles/content.css"],
       "run_at": "document_end"
     }
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "B站视频摘要助手"
+    "default_popup": "src/popup.html",
+    "default_title": "B站视频摘要助手",
+    "default_icon": {"16": "icons/icon16.svg", "32": "icons/icon32.svg", "48": "icons/icon48.svg", "128": "icons/icon128.svg"}
   },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "options_page": "src/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["popup.html", "popup.js"],
-      "matches": ["https://*.bilibili.com/*"]
+      "resources": ["src/services/*", "icons/*", "styles/*"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

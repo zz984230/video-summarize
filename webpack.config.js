@@ -4,9 +4,9 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   entry: {
-    popup: './src/popup/index.tsx',
-    background: './src/background/index.ts',
-    content: './src/content/index.ts'
+    popup: './src/popup.js',
+    background: './src/background.js',
+    content: './src/content.js'
   },
   module: {
     rules: [
@@ -31,14 +31,31 @@ module.exports = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: './src/popup/popup.html',
+      template: './src/popup.html',
       filename: 'popup.html',
       chunks: ['popup']
     }),
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'manifest.json', to: 'manifest.json' },
-        { from: 'icons', to: 'icons', noErrorOnMissing: true }
+        { 
+          from: 'manifest.json', 
+          to: 'manifest.json',
+          transform(content, path) {
+            // 将Buffer转换为字符串，然后修改路径
+            let contentStr = content.toString('utf8');
+            // 修改manifest.json中的路径，移除src/前缀
+            return contentStr
+              .replace(/src\/background\.js/g, 'background.js')
+              .replace(/src\/content\.js/g, 'content.js')
+              .replace(/src\/popup\.html/g, 'popup.html')
+              .replace(/src\/options\.html/g, 'options.html')
+              .replace(/src\/popup\.js/g, 'popup.js')
+              .replace(/src\/services\/\*/g, 'background.js');
+          }
+        },
+        { from: 'icons', to: 'icons', noErrorOnMissing: true },
+        { from: 'src/options.html', to: 'options.html', noErrorOnMissing: true },
+        { from: 'styles', to: 'styles', noErrorOnMissing: true }
       ]
     })
   ],

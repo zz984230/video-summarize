@@ -14,9 +14,7 @@ const mockAxiosInstance = {
       use: jest.fn()
     }
   }
-};
-
-(axios as jest.MockedFunction<typeof axios>).create = jest.fn(() => mockAxiosInstance);
+} as unknown as jest.Mocked<typeof axios>;
 
 describe('ModelService', () => {
   let modelService: ModelService;
@@ -28,6 +26,7 @@ describe('ModelService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
     modelService = new ModelService(mockConfig);
   });
 
