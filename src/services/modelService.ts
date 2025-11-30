@@ -3,13 +3,20 @@ import { ModelConfig, VideoInfo, SummaryResult } from '../types';
 import { VideoStreamExtractor } from './videoStreamExtractor';
 import { EnhancedVideoAnalyzer } from './videoFrameExtractor';
 import { DashToMp4Converter, EnhancedVideoAnalyzerPro } from './dashToMp4Converter';
+import { VideoProxyManager } from './videoProxyService';
 
 export class ModelService {
   private axiosInstance: AxiosInstance;
   private config: ModelConfig;
+  private videoProxyManager: VideoProxyManager;
 
   constructor(config: ModelConfig) {
     this.config = config;
+    
+    // 初始化视频代理管理器
+    this.videoProxyManager = VideoProxyManager.getInstance();
+    
+    // 确保baseURL格式正确 - ModelScope API端点
     
     // 确保baseURL格式正确 - ModelScope API端点
     let baseURL = config.baseUrl;
@@ -121,13 +128,15 @@ export class ModelService {
         
         let messagesCreated = false;
         
-        // 策略1: 尝试获取封面图片进行多模态分析
+        // 策略1: 尝试创建视频代理URL（解决加密链接问题）
         try {
-          let coverImageUrl = await VideoStreamExtractor.getVideoCoverImage(videoInfo);
-          console.log('封面图片URL:', coverImageUrl);
+          console.log('🎬 尝试创建视频代理URL...');
+          const proxyResult = await this.videoProxyManager.createVideoProxy(videoInfo);
           
-          if (coverImageUrl) {
-            // 使用封面图片+文本分析（最可靠的多模态方案）
+          if (proxyResult.success && proxyResult.proxyUrl) {
+            console.log('✅ 视频代理创建成功，使用代理URL进行分析');
+            
+            // 使用代理URL进行多模态分析
             messages = [
               {
                 role: 'user',
@@ -135,24 +144,94 @@ export class ModelService {
                   {
                     type: 'image_url',
                     image_url: {
-                      url: coverImageUrl
+                      url: proxyResult.proxyUrl
                     }
                   },
                   {
                     type: 'text',
-                    text: this.buildEnhancedMultimodalPrompt(videoInfo)
+                    text: this.buildEnhancedMultimodalPrompt(videoInfo) + `
+
+🎥 **视频代理信息**：
+- 代理策略：${proxyResult.strategy}
+- 代理状态：成功创建本地缓存
+- 分析类型：视频内容分析
+`
                   }
                 ]
               }
             ];
             messagesCreated = true;
-            console.log('使用封面图片多模态分析');
+            console.log('使用视频代理进行多模态分析');
+          } else if (proxyResult.success && proxyResult.coverUrl) {
+            console.log('✅ 封面代理创建成功，使用封面图片进行分析');
+            
+            // 使用封面图片进行多模态分析
+            messages = [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: proxyResult.coverUrl
+                    }
+                  },
+                  {
+                    type: 'text',
+                    text: this.buildEnhancedMultimodalPrompt(videoInfo) + `
+
+🖼️ **封面代理信息**：
+- 代理策略：${proxyResult.strategy}
+- 代理状态：成功创建封面缓存
+- 分析类型：封面图片分析
+`
+                  }
+                ]
+              }
+            ];
+            messagesCreated = true;
+            console.log('使用封面代理进行多模态分析');
+          } else {
+            console.warn('视频代理创建失败:', proxyResult.error);
           }
-        } catch (imageError) {
-          console.log('封面图片分析失败:', imageError);
+        } catch (proxyError) {
+          console.warn('视频代理服务异常:', proxyError);
         }
         
-        // 如果图片分析失败，使用纯文本分析
+        // 策略2: 如果代理失败，尝试传统封面图片分析
+        if (!messagesCreated) {
+          try {
+            let coverImageUrl = await VideoStreamExtractor.getVideoCoverImage(videoInfo);
+            console.log('封面图片URL:', coverImageUrl);
+            
+            if (coverImageUrl) {
+              // 使用封面图片+文本分析（最可靠的多模态方案）
+              messages = [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: coverImageUrl
+                      }
+                    },
+                    {
+                      type: 'text',
+                      text: this.buildEnhancedMultimodalPrompt(videoInfo)
+                    }
+                  ]
+                }
+              ];
+              messagesCreated = true;
+              console.log('使用封面图片多模态分析（备用方案）');
+            }
+          } catch (imageError) {
+            console.log('封面图片分析失败:', imageError);
+          }
+        }
+        
+        // 如果所有多模态方案都失败，使用纯文本分析
         if (!messagesCreated) {
           console.log('使用增强文本分析模式');
           messages = this.buildEnhancedTextAnalysisMessages(videoInfo);

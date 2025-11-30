@@ -1,13 +1,22 @@
 import { ModelService } from '../services/modelService';
+import axios from 'axios';
 
 // 模拟axios
+jest.mock('axios');
+
 const mockAxiosInstance = {
-  post: jest.fn()
+  post: jest.fn(),
+  interceptors: {
+    request: {
+      use: jest.fn()
+    },
+    response: {
+      use: jest.fn()
+    }
+  }
 };
 
-jest.mock('axios', () => ({
-  create: jest.fn(() => mockAxiosInstance)
-}));
+(axios as jest.MockedFunction<typeof axios>).create = jest.fn(() => mockAxiosInstance);
 
 describe('ModelService', () => {
   let modelService: ModelService;
