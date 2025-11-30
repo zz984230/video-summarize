@@ -348,7 +348,23 @@
       </div>
 
       <div class="form-group">
-        <label class="label" for="apiKey">多模态模型API密钥</label>
+        <label class="label" for="apiUrl">大模型API地址</label>
+        <input type="text" id="apiUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" value="https://dashscope.aliyuncs.com/compatible-mode/v1">
+        <div class="help-text">
+          配置您的多模态AI服务地址，支持DashScope API
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="label" for="modelId">模型ID</label>
+        <input type="text" id="modelId" placeholder="例如：Qwen/Qwen2-VL-7B-Instruct" value="Qwen/Qwen2-VL-7B-Instruct">
+        <div class="help-text">
+          输入要使用的多模态模型ID，支持如：Qwen/Qwen2-VL-7B-Instruct、Qwen/Qwen3-VL-8B-Instruct等
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="label" for="apiKey">API密钥</label>
         <div class="input-wrapper">
           <input type="password" id="apiKey" placeholder="请输入API密钥..." autocomplete="off">
           <button type="button" class="toggle-password" id="togglePassword">👁️</button>
@@ -439,6 +455,6 @@
     </div>
   </div>
 
-  <script type="module" src="options.js"></script>
+  <!-- options.js will be injected by HtmlWebpackPlugin -->
 </body>
 </html>

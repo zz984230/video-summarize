@@ -1,9 +1,6 @@
 // 弹窗界面脚本
-import { BilibiliVideoParser } from './services/bilibili-parser.js';
-
 class PopupController {
   constructor() {
-    this.parser = new BilibiliVideoParser();
     this.currentTab = null;
     this.currentVideo = null;
     this.init();
@@ -12,6 +9,15 @@ class PopupController {
   async init() {
     console.log('🪟 弹窗界面初始化');
     
+    // 确保DOM完全加载后再初始化
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this._init());
+    } else {
+      this._init();
+    }
+  }
+
+  async _init() {
     // 获取当前标签页
     await this.getCurrentTab();
     
@@ -20,6 +26,9 @@ class PopupController {
     
     // 检查当前页面状态
     this.checkPageState();
+    
+    // 加载历史记录
+    this.loadHistory();
   }
 
   async getCurrentTab() {
@@ -33,263 +42,223 @@ class PopupController {
   }
 
   bindEvents() {
-    // 分析按钮
-    document.getElementById('analyzeBtn').addEventListener('click', () => {
-      this.analyzeCurrentVideo();
-    });
-
-    // 复制按钮
-    document.getElementById('copyBtn').addEventListener('click', () => {
-      this.copyResult();
-    });
-
     // 设置按钮
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      this.openSettings();
-    });
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+      });
+    }
 
-    // 刷新按钮
-    document.getElementById('refreshBtn').addEventListener('click', () => {
-      this.checkPageState();
-    });
+    // 生成按钮
+    const generateBtn = document.getElementById('generateBtn');
+    if (generateBtn) {
+      generateBtn.addEventListener('click', () => {
+        this.generateSummary();
+      });
+    }
 
-    // 底部链接
-    document.getElementById('openOptions').addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openSettings();
+    // 标签页切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        this.switchTab(e.target.dataset.tab);
+      });
     });
   }
 
-  async checkPageState() {
+  switchTab(tabName) {
+    // 更新标签页状态
+    document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+    const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (activeTab) {
+      activeTab.classList.add('active');
+    }
+
+    // 更新内容显示
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    const targetContent = document.getElementById(`${tabName}-content`);
+    if (targetContent) {
+      targetContent.classList.add('active');
+    }
+
+    // 加载历史记录
+    if (tabName === 'history') {
+      this.loadHistory();
+    }
+  }
+
+  checkPageState() {
+    const urlDisplay = document.getElementById('currentUrl');
+    
     if (!this.currentTab || !this.currentTab.url) {
-      this.showError('无法获取当前页面信息');
+      if (urlDisplay) urlDisplay.textContent = '无法获取当前页面';
+      const generateBtn = document.getElementById('generateBtn');
+      if (generateBtn) generateBtn.disabled = true;
       return;
     }
 
+    if (urlDisplay) {
+      urlDisplay.textContent = this.currentTab.url;
+    }
+
+    // 检查是否为B站视频页面
     const isBilibiliVideo = this.currentTab.url.includes('/video/') && 
                            (this.currentTab.url.includes('BV') || this.currentTab.url.includes('av'));
 
     if (!isBilibiliVideo) {
       this.showError('请在B站视频页面使用此插件');
-      this.hideVideoInfo();
-      return;
-    }
-
-    this.showVideoInfo();
-    
-    try {
-      // 解析视频信息
-      const bvid = this.parser.extractBV(this.currentTab.url);
-      if (bvid) {
-        console.log('🔍 检测到视频 BV号:', bvid);
-        await this.loadVideoInfo(bvid);
-      }
-    } catch (error) {
-      console.error('❌ 视频信息加载失败:', error);
-      this.showError('视频信息加载失败');
+      const generateBtn = document.getElementById('generateBtn');
+      if (generateBtn) generateBtn.disabled = true;
     }
   }
 
-  async loadVideoInfo(bvid) {
-    try {
-      this.showStatus('正在获取视频信息...', 'loading');
-      
-      const videoInfo = await this.parser.getVideoInfo(bvid);
-      const videoUrls = await this.parser.getVideoUrls(bvid);
-      
-      if (videoInfo && videoInfo.code === 0) {
-        this.currentVideo = {
-          bvid: bvid,
-          title: videoInfo.data.title,
-          owner: videoInfo.data.owner?.name || '未知作者',
-          duration: videoInfo.data.duration,
-          view: videoInfo.data.stat?.view || 0,
-          pages: videoInfo.data.pages?.length || 1,
-          playUrl: videoUrls.durl[0]?.url || ''
-        };
-
-        this.displayVideoInfo(this.currentVideo);
-        this.hideStatus();
-      } else {
-        throw new Error('获取视频信息失败');
-      }
-    } catch (error) {
-      console.error('❌ 视频信息加载失败:', error);
-      this.showError('无法获取视频信息');
-    }
-  }
-
-  displayVideoInfo(video) {
-    const titleElement = document.getElementById('videoTitle');
-    const ownerElement = document.getElementById('videoOwner');
-    const durationElement = document.getElementById('videoDuration');
-    const viewsElement = document.getElementById('videoViews');
-
-    titleElement.textContent = video.title;
-    ownerElement.textContent = `👤 ${video.owner}`;
-    durationElement.textContent = `⏱️ ${this.formatDuration(video.duration)}`;
-    viewsElement.textContent = `👀 ${this.formatNumber(video.view)}`;
-
-    this.showVideoInfo();
-  }
-
-  async analyzeCurrentVideo() {
-    if (!this.currentVideo) {
-      this.showError('请先获取视频信息');
+  async generateSummary() {
+    if (!this.currentTab || !this.currentVideo) {
+      this.showError('视频信息获取失败');
       return;
     }
 
     try {
-      // 获取分析类型
-      const analysisType = document.getElementById('analysisType').value;
+      this.showLoading(true);
       
-      // 设置分析状态
-      this.setAnalyzingState(true);
-      this.showStatus('正在分析视频内容...', 'loading');
-
-      // 准备分析数据
-      const analysisData = {
-        videoUrl: this.currentVideo.playUrl,
-        title: this.currentVideo.title,
-        owner: this.currentVideo.owner,
-        duration: this.currentVideo.duration,
-        view: this.currentVideo.view,
-        pages: this.currentVideo.pages
-      };
-
-      // 发送分析请求到后台
+      // 发送消息给background script
       const response = await this.sendMessage('ANALYZE_VIDEO', {
-        videoData: analysisData,
-        analysisType: analysisType
+        videoUrl: this.currentTab.url,
+        videoTitle: this.currentVideo?.title || '未知标题'
       });
 
       if (response.success) {
-        this.hideStatus();
-        this.displayResult(response.summary);
-        this.showCopyButton();
+        this.hideLoading();
+        this.displaySummary(response.summary);
+        this.saveToHistory(this.currentVideo?.title || '未知标题', response.summary);
+        this.showSuccess('摘要生成成功！');
       } else {
-        this.hideStatus();
-        this.showError('分析失败', response.error || '未知错误');
+        throw new Error(response.error || '分析失败');
       }
-
     } catch (error) {
-      console.error('❌ 视频分析失败:', error);
-      this.hideStatus();
-      this.showError('分析失败', error.message);
-    } finally {
-      this.setAnalyzingState(false);
+      this.hideLoading();
+      this.showError('生成摘要失败: ' + error.message);
     }
   }
 
-  displayResult(result) {
-    const container = document.getElementById('resultContainer');
-    const textElement = document.getElementById('resultText');
-
-    textElement.textContent = result;
-    container.style.display = 'block';
+  displaySummary(summary) {
+    const summarySection = document.getElementById('summarySection');
+    const summaryContent = document.getElementById('summaryContent');
     
-    // 滚动到结果区域
-    container.scrollIntoView({ behavior: 'smooth' });
-  }
-
-  copyResult() {
-    const text = document.getElementById('resultText').textContent;
-    if (text) {
-      navigator.clipboard.writeText(text).then(() => {
-        this.showStatus('结果已复制到剪贴板', 'success');
-        setTimeout(() => this.hideStatus(), 2000);
-      }).catch(() => {
-        this.showError('复制失败');
-      });
+    if (summaryContent) {
+      summaryContent.textContent = summary;
+    }
+    if (summarySection) {
+      summarySection.style.display = 'block';
+      
+      // 滚动到摘要区域
+      summarySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }
 
-  showVideoInfo() {
-    document.getElementById('videoInfo').style.display = 'block';
-  }
-
-  hideVideoInfo() {
-    document.getElementById('videoInfo').style.display = 'none';
-  }
-
-  showStatus(message, type) {
-    const statusElement = document.getElementById('status');
-    statusElement.textContent = message;
-    statusElement.className = `status ${type}`;
-    statusElement.style.display = 'block';
-  }
-
-  hideStatus() {
-    document.getElementById('status').style.display = 'none';
-  }
-
-  showError(title, message) {
-    const errorMessage = message ? `${title}: ${message}` : title;
-    this.showStatus(errorMessage, 'error');
-    setTimeout(() => this.hideStatus(), 5000);
-  }
-
-  setAnalyzingState(isAnalyzing) {
-    const button = document.getElementById('analyzeBtn');
-    const select = document.getElementById('analysisType');
+  showLoading(show) {
+    const loadingState = document.getElementById('loadingState');
+    const generateBtn = document.getElementById('generateBtn');
     
-    if (isAnalyzing) {
-      button.disabled = true;
-      select.disabled = true;
-      button.innerHTML = `
-        <span class="loading-spinner"></span>
-        分析中...
-      `;
-    } else {
-      button.disabled = false;
-      select.disabled = false;
-      button.innerHTML = `
-        <span class="btn-icon">🔍</span>
-        开始分析
-      `;
+    if (loadingState) {
+      loadingState.style.display = show ? 'block' : 'none';
+    }
+    if (generateBtn) {
+      generateBtn.disabled = show;
     }
   }
 
-  showCopyButton() {
-    document.getElementById('copyBtn').style.display = 'block';
+  hideLoading() {
+    this.showLoading(false);
   }
 
-  hideCopyButton() {
-    document.getElementById('copyBtn').style.display = 'none';
+  showError(message) {
+    const errorState = document.getElementById('errorState');
+    if (errorState) {
+      errorState.textContent = message;
+      errorState.style.display = 'block';
+      
+      setTimeout(() => {
+        errorState.style.display = 'none';
+      }, 5000);
+    }
   }
 
-  openSettings() {
-    chrome.runtime.openOptionsPage();
+  showSuccess(message) {
+    const successState = document.getElementById('successState');
+    if (successState) {
+      successState.textContent = message;
+      successState.style.display = 'block';
+      
+      setTimeout(() => {
+        successState.style.display = 'none';
+      }, 2000);
+    }
+  }
+
+  async loadHistory() {
+    try {
+      const result = await chrome.storage.local.get(['summaryHistory']);
+      const history = result.summaryHistory || [];
+      
+      const historyList = document.getElementById('historyList');
+      
+      if (!historyList) return;
+      
+      if (history.length === 0) {
+        historyList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📝</div>
+            <div class="empty-state-text">暂无历史记录</div>
+          </div>
+        `;
+        return;
+      }
+      
+      historyList.innerHTML = history.map(item => `
+        <div class="history-item">
+          <div class="history-title">${item.title}</div>
+          <div class="history-summary">${item.summary}</div>
+          <div class="history-meta">
+            <span>${item.date}</span>
+            <span>${item.url}</span>
+          </div>
+        </div>
+      `).join('');
+    } catch (error) {
+      console.error('加载历史记录失败:', error);
+    }
+  }
+
+  async saveToHistory(title, summary) {
+    try {
+      const result = await chrome.storage.local.get(['summaryHistory']);
+      const history = result.summaryHistory || [];
+      
+      const newItem = {
+        title: title,
+        summary: summary,
+        date: new Date().toLocaleString(),
+        url: this.currentTab.url
+      };
+      
+      history.unshift(newItem);
+      
+      // 限制历史记录数量
+      if (history.length > 50) {
+        history.splice(50);
+      }
+      
+      await chrome.storage.local.set({ summaryHistory: history });
+    } catch (error) {
+      console.error('保存历史记录失败:', error);
+    }
   }
 
   sendMessage(action, data) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ action, data }, resolve);
     });
-  }
-
-  formatDuration(seconds) {
-    if (!seconds || seconds <= 0) return '0秒';
-    
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    } else {
-      return `${minutes}:${secs.toString().padStart(2, '0')}`;
-    }
-  }
-
-  formatNumber(num) {
-    if (num >= 100000000) {
-      return (num / 100000000).toFixed(1) + '亿';
-    } else if (num >= 10000) {
-      return (num / 10000).toFixed(1) + '万';
-    } else {
-      return num.toString();
-    }
   }
 }
 

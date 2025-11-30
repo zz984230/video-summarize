@@ -6,7 +6,8 @@ module.exports = {
   entry: {
     popup: './src/popup.js',
     background: './src/background.js',
-    content: './src/content.js'
+    content: './src/content.js',
+    options: './src/options.js'
   },
   module: {
     rules: [
@@ -35,6 +36,11 @@ module.exports = {
       filename: 'popup.html',
       chunks: ['popup']
     }),
+    new HtmlWebpackPlugin({
+      template: './src/options.html',
+      filename: 'options.html',
+      chunks: ['options']
+    }),
     new CopyWebpackPlugin({
       patterns: [
         { 
@@ -54,7 +60,6 @@ module.exports = {
           }
         },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
-        { from: 'src/options.html', to: 'options.html', noErrorOnMissing: true },
         { from: 'styles', to: 'styles', noErrorOnMissing: true }
       ]
     })

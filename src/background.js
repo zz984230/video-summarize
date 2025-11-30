@@ -30,7 +30,7 @@ class BackgroundService {
     if (details.reason === 'install') {
       // 首次安装，打开设置页面
       chrome.tabs.create({
-        url: chrome.runtime.getURL('src/options.html')
+        url: chrome.runtime.getURL('options.html')
       });
     }
   }
@@ -45,6 +45,12 @@ class BackgroundService {
           
         case 'ANALYZE_VIDEO':
           return await this.analyzeVideo(request.data, sendResponse);
+          
+        case 'VIDEO_DETECTED':
+          console.log('📹 检测到视频页面:', request.data.videoInfo?.title || '未知标题');
+          // 视频检测成功，可以在这里添加其他处理逻辑
+          sendResponse({ success: true, message: '视频检测成功' });
+          return;
           
         case 'GET_STORAGE':
           return await this.getStorage(request.key, sendResponse);

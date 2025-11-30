@@ -59,20 +59,24 @@ class BilibiliContentScript {
       // 提取视频信息
       const videoInfo = this.extractVideoInfo();
       
-      if (videoInfo) {
-        console.log('✅ 视频信息提取成功:', videoInfo);
-        
-        // 添加视频摘要按钮
-        this.addSummaryButton(videoInfo);
-        
-        // 通知后台服务
-        this.notifyBackground('VIDEO_DETECTED', {
-          url: url,
-          videoInfo: videoInfo
-        });
-      }
+      console.log('✅ 视频信息提取成功:', videoInfo);
+      
+      // 保存当前视频信息，供按钮点击时使用
+      this.currentVideoInfo = videoInfo;
+      console.log('✅ 当前视频信息已保存:', this.currentVideoInfo);
+      
+      // 添加视频摘要按钮
+      this.addSummaryButton(videoInfo);
+      
+      // 通知后台服务
+      this.notifyBackground('VIDEO_DETECTED', {
+        url: url,
+        videoInfo: videoInfo
+      });
+      
     } catch (error) {
       console.error('❌ 视频页面处理失败:', error);
+      console.error('❌ 错误详情:', error.stack);
     }
   }
 
@@ -97,20 +101,49 @@ class BilibiliContentScript {
 
   extractVideoInfo() {
     try {
+      console.log('🔍 开始提取视频信息...');
+      
+      // 1. 提取BV号
+      let bvid = null;
+      try {
+        bvid = this.parser.extractBV(window.location.href);
+        console.log('✅ BV号提取成功:', bvid);
+      } catch (error) {
+        console.error('❌ BV号提取失败:', error);
+        throw new Error(`无法从URL提取BV号: ${window.location.href}`);
+      }
+      
+      // 2. 提取其他信息
+      const title = this.getVideoTitle();
+      const owner = this.getVideoOwner();
+      const duration = this.getVideoDuration();
+      const view = this.getVideoViews();
+      const pages = this.getVideoPages();
+      
+      console.log('✅ 视频信息提取完成:', {
+        bvid,
+        title,
+        owner,
+        duration,
+        view,
+        pages,
+        url: window.location.href
+      });
+
       const info = {
-        bvid: this.parser.extractBV(window.location.href),
-        title: this.getVideoTitle(),
-        owner: this.getVideoOwner(),
-        duration: this.getVideoDuration(),
-        view: this.getVideoViews(),
-        pages: this.getVideoPages(),
+        bvid,
+        title,
+        owner,
+        duration,
+        view,
+        pages,
         url: window.location.href
       };
 
       return info;
     } catch (error) {
       console.error('❌ 视频信息提取失败:', error);
-      return null;
+      throw error; // 重新抛出错误，不要返回null
     }
   }
 
@@ -252,31 +285,63 @@ class BilibiliContentScript {
     document.body.appendChild(button);
   }
 
-  async onSummaryButtonClick(videoInfo) {
+  async onSummaryButtonClick() {
     try {
-      console.log('🔄 开始生成视频摘要:', videoInfo.title);
-      
-      // 显示加载状态
+      console.log('🔄 点击AI摘要按钮，开始分析...');
       this.showLoadingState();
       
-      // 获取播放地址
-      const playUrl = await this.parser.getVideoUrls(videoInfo.bvid);
+      // 检查是否有当前视频信息
+      if (!this.currentVideoInfo) {
+        throw new Error('未找到视频信息，请刷新页面重试');
+      }
       
-      // 准备分析数据
-      const analysisData = {
-        videoUrl: playUrl.durl[0].url,
+      console.log('✅ 当前视频信息:', this.currentVideoInfo);
+      
+      // 获取当前页面视频信息 - 使用测试文件中验证过的方法
+      console.log('🔍 开始获取视频详细信息...');
+      const videoInfo = await this.parser.getVideoInfo(this.currentVideoInfo.bvid);
+      
+      console.log('✅ 视频基本信息获取成功:', {
+        bvid: videoInfo.bvid,
         title: videoInfo.title,
-        owner: videoInfo.owner,
+        aid: videoInfo.aid,
+        cid: videoInfo.pages[0].cid
+      });
+      
+      // 获取播放地址 - 修复API调用参数问题
+      console.log('🔍 开始获取视频播放地址...');
+      const videoUrls = await this.parser.getVideoUrls(
+        videoInfo.aid, 
+        videoInfo.pages[0].cid, 
+        64  // 720P质量
+      );
+      
+      if (!videoUrls || videoUrls.length === 0) {
+        throw new Error('无法获取视频播放地址');
+      }
+      
+      console.log('✅ 视频播放地址获取成功:', videoUrls.length > 0 ? videoUrls[0].url.substring(0, 100) + '...' : '无地址');
+      
+      // 准备分析数据 - 使用正确的URL结构
+      const analysisData = {
+        videoUrl: videoUrls[0].url,  // 使用第一个分段的URL
+        title: videoInfo.title,
+        owner: videoInfo.owner.name || videoInfo.owner,  // 兼容不同格式
         duration: videoInfo.duration,
         view: videoInfo.view,
-        pages: videoInfo.pages
+        pages: videoInfo.pages.length
       };
 
+      console.log('📦 准备发送分析请求:', analysisData);
+
       // 发送分析请求到后台
+      console.log('📤 发送分析请求到后台...');
       const result = await this.sendMessageToBackground('ANALYZE_VIDEO', {
         videoData: analysisData,
         analysisType: 'general'
       });
+
+      console.log('📥 收到后台响应:', result);
 
       if (result.success) {
         this.showAnalysisResult(result);
@@ -286,6 +351,7 @@ class BilibiliContentScript {
       
     } catch (error) {
       console.error('❌ 摘要生成失败:', error);
+      console.error('❌ 错误堆栈:', error.stack);
       this.showError('摘要生成失败', error.message);
     }
   }
