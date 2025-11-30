@@ -129,23 +129,23 @@ class BilibiliVideoParser {
     }
 
     /**
-     * 获取视频播放地址
+     * 获取MP4/FLV视频播放地址（非DASH格式）
      * @param {number} aid - 视频aid
      * @param {number} cid - 视频cid
      * @param {number} qn - 视频质量
-     * @returns {Promise<Object>} 视频下载地址
+     * @returns {Promise<Array>} MP4/FLV下载地址
      */
-    async getVideoUrls(aid, cid, qn = 80) {
+    async getVideoUrls(aid, cid, qn = 64) {
         try {
             const params = new URLSearchParams({
                 avid: aid,
                 cid: cid,
-                qn: qn,
+                qn: qn,        // 720P或更低，提高兼容性
                 type: '',
                 otype: 'json',
-                fourk: 0,           // 禁用4K，提高兼容性
+                fourk: 0,      // 禁用4K
                 fnver: 0,
-                fnval: 4048,
+                fnval: 0,      // 关键：禁用DASH，强制FLV
                 platform: 'html5',  // 使用HTML5平台
                 high_quality: 0     // 禁用高质量
             });
@@ -168,43 +168,13 @@ class BilibiliVideoParser {
             
             console.log(`✅ 播放地址获取成功`);
             
-            // 处理DASH格式视频
-            if (data.data.dash) {
-                const videoUrls = [];
-                const audioUrls = [];
-                
-                // 提取视频流
-                data.data.dash.video.forEach(video => {
-                    videoUrls.push({
-                        url: video.baseUrl,
-                        quality: video.id,
-                        codecs: video.codecs,
-                        bandwidth: video.bandwidth,
-                        size: video.size || 0,
-                        type: 'video'
-                    });
-                });
-                
-                // 提取音频流
-                data.data.dash.audio.forEach(audio => {
-                    audioUrls.push({
-                        url: audio.baseUrl,
-                        quality: audio.id,
-                        bandwidth: audio.bandwidth,
-                        type: 'audio'
-                    });
-                });
-                
-                return { video: videoUrls, audio: audioUrls };
-            }
-            
-            // 处理FLV格式视频
+            // 处理FLV格式视频（返回MP4/FLV格式的分段地址）
             if (data.data.durl) {
                 return data.data.durl.map(item => ({
                     url: item.url,
                     size: item.size,
                     length: item.length,
-                    type: 'flv'
+                    type: 'mp4/flv'
                 }));
             }
             
@@ -215,54 +185,16 @@ class BilibiliVideoParser {
         }
     }
 
-    /** 
-     * 获取 MP4/FLV 完整文件地址（非 DASH） 
-     * @param {number} aid 
-     * @param {number} cid 
-     * @param {number} qn 建议 64（720P）或更低 
-     * @returns {Promise<Array>} MP4/FLV 下载地址 
-     */ 
-    async getMp4Urls(aid, cid, qn = 64) { 
-        const params = new URLSearchParams({ 
-            avid: aid, 
-            cid: cid, 
-            qn: qn,        // 720P 或更低 
-            type: '', 
-            otype: 'json', 
-            fnver: 0, 
-            fnval: 0,      // 关键：禁用 DASH，强制 FLV 
-            platform: 'html5',  // 使用HTML5平台，提高兼容性
-            fourk: 0,      // 禁用4K
-            high_quality: 0 // 禁用高质量
-        }); 
-
-        const response = await fetch(`${this.playUrlApi}?${params}`, { 
-            headers: this.headers 
-        }); 
-
-        const data = await response.json(); 
-        if (data.code !== 0) throw new Error(data.message); 
-
-        // 返回 FLV 格式的分段地址（可直接下载，浏览器识别为 MP4） 
-        return data.data.durl.map(segment => ({ 
-            url: segment.url, 
-            size: segment.size, 
-            length: segment.length, 
-            type: 'mp4/flv' 
-        })); 
-    }
-
     /**
-     * 主解析函数
+     * 主解析函数（仅支持MP4/FLV格式）
      * @param {string} inputUrl - 用户输入的B站视频链接
-     * @param {number} quality - 视频质量选项
-     * @param {boolean} useMp4 - 是否使用MP4/FLV格式（非DASH）
+     * @param {number} quality - 视频质量选项（默认720P）
      * @returns {Promise<Object>} 解析结果
      */
-    async parseVideo(inputUrl, quality = 80, useMp4 = false) {
+    async parseVideo(inputUrl, quality = 64) {
         try {
             console.log('🚀 开始解析视频链接:', inputUrl);
-            console.log(`📋 格式选项: ${useMp4 ? 'MP4/FLV' : 'DASH'}格式`);
+            console.log('📋 格式选项: MP4/FLV格式');
             
             // 1. 提取BV号
             const bvid = this.extractBV(inputUrl);
@@ -271,7 +203,7 @@ class BilibiliVideoParser {
             // 2. 获取视频基本信息
             const videoInfo = await this.getVideoInfo(bvid);
             
-            // 3. 获取下载地址
+            // 3. 获取MP4/FLV下载地址
             let allUrls = [];
             
             if (videoInfo.pages.length > 1) {
@@ -281,16 +213,14 @@ class BilibiliVideoParser {
                     const page = videoInfo.pages[i];
                     console.log(`⏳ 正在获取第${i + 1}P地址: ${page.title}`);
                     
-                    const urls = useMp4 ? 
-                        await this.getMp4Urls(videoInfo.aid, page.cid, quality > 64 ? 64 : quality) :
-                        await this.getVideoUrls(videoInfo.aid, page.cid, quality);
+                    const urls = await this.getVideoUrls(videoInfo.aid, page.cid, quality > 64 ? 64 : quality);
                     
                     allUrls.push({
                         page: i + 1,
                         title: page.title,
                         cid: page.cid,
                         urls: urls,
-                        format: useMp4 ? 'mp4' : 'dash'
+                        format: 'mp4'
                     });
                     
                     // 添加延迟避免请求过快
@@ -299,16 +229,14 @@ class BilibiliVideoParser {
             } else {
                 // 单P视频
                 console.log('📝 单P视频，直接获取地址');
-                const urls = useMp4 ? 
-                    await this.getMp4Urls(videoInfo.aid, videoInfo.pages[0].cid, quality > 64 ? 64 : quality) :
-                    await this.getVideoUrls(videoInfo.aid, videoInfo.pages[0].cid, quality);
+                const urls = await this.getVideoUrls(videoInfo.aid, videoInfo.pages[0].cid, quality > 64 ? 64 : quality);
                 
                 allUrls.push({
                     page: 1,
                     title: videoInfo.title,
                     cid: videoInfo.pages[0].cid,
                     urls: urls,
-                    format: useMp4 ? 'mp4' : 'dash'
+                    format: 'mp4'
                 });
             }
             
@@ -322,7 +250,7 @@ class BilibiliVideoParser {
                     pages: videoInfo.pages.length
                 },
                 downloadUrls: allUrls,
-                format: useMp4 ? 'mp4' : 'dash'
+                format: 'mp4'
             };
             
         } catch (error) {
@@ -349,30 +277,10 @@ async function testBilibiliParser() {
     try {
         const parser = new BilibiliVideoParser();
         
-        // 测试DASH格式
-        console.log('\n� 测试1: DASH格式 (1080P)');
-        console.log('-'.repeat(40));
-        const resultDash = await parser.parseVideo(testUrl, 80, false);
-        
-        if (resultDash.success) {
-            console.log('✅ DASH格式测试成功');
-            console.log(`📹 视频: ${resultDash.videoInfo.title}`);
-            console.log(`📊 格式: ${resultDash.format}`);
-            
-            // 显示第一个分P的地址信息
-            const firstItem = resultDash.downloadUrls[0];
-            if (firstItem.urls.video && firstItem.urls.audio) {
-                console.log(`🎬 视频流数量: ${firstItem.urls.video.length}`);
-                console.log(`🎵 音频流数量: ${firstItem.urls.audio.length}`);
-            }
-        } else {
-            console.log('❌ DASH格式测试失败:', resultDash.error);
-        }
-        
         // 测试MP4格式
-        console.log('\n🔍 测试2: MP4/FLV格式 (720P)');
+        console.log('\n🔍 测试: MP4/FLV格式 (720P)');
         console.log('-'.repeat(40));
-        const resultMp4 = await parser.parseVideo(testUrl, 64, true);
+        const resultMp4 = await parser.parseVideo(testUrl, 64);
         
         if (resultMp4.success) {
             console.log('✅ MP4格式测试成功');
@@ -388,17 +296,6 @@ async function testBilibiliParser() {
                     console.log(`📦 文件大小: ${formatSize(firstItem.urls[0].size)}`);
                 }
             }
-        } else {
-            console.log('❌ MP4格式测试失败:', resultMp4.error);
-        }
-        
-        // 对比总结
-        console.log('\n📈 对比总结');
-        console.log('='.repeat(40));
-        if (resultDash.success && resultMp4.success) {
-            console.log('✅ 两种格式都获取成功');
-            console.log(`📊 DASH格式: 视频+音频分离，适合高质量播放`);
-            console.log(`📊 MP4格式: 完整视频文件，适合直接下载播放`);
             
             // 显示文件大小对比（如果有数据）
             const mp4FirstSegment = resultMp4.downloadUrls[0].urls[0];
@@ -411,17 +308,13 @@ async function testBilibiliParser() {
                 await testUrlAccessibility(snapanyWorkingUrl, 'Snapany URL (已知可用)');
                 await testUrlAccessibility(mp4FirstSegment.url, '我们的MP4 URL');
                 
-                // 使用多模态模型分析视频（通过封面图片避免直接访问加密视频）
+                // 使用多模态模型分析视频
                 console.log('\n🤖 多模态模型视频分析:');
                 console.log('='.repeat(50));
                 
-                // 获取封面图片URL
-                const coverUrl = resultMp4.videoInfo.pic || resultMp4.videoInfo.cover;
-                
                 const analysisResult = await analyzeVideoWithMultimodalModel(
                     mp4FirstSegment.url,
-                    resultMp4.videoInfo.title,
-                    coverUrl
+                    resultMp4.videoInfo.title
                 );
                 
                 if (analysisResult.success) {
@@ -430,15 +323,8 @@ async function testBilibiliParser() {
                     console.log('❌ 视频分析失败:', analysisResult.error);
                 }
             }
-        } else if (resultMp4.success) {
-            console.log('✅ MP4格式可用，DASH格式失败');
-            console.log('💡 建议使用MP4格式获取完整视频文件');
-        } else if (resultDash.success) {
-            console.log('✅ DASH格式可用，MP4格式失败');
-            console.log('💡 建议使用DASH格式，但需要合并视频和音频');
         } else {
-            console.log('❌ 两种格式都获取失败');
-            console.log('🔧 请检查视频链接是否有效或稍后重试');
+            console.log('❌ MP4格式测试失败:', resultMp4.error);
         }
         
     } catch (error) {
@@ -520,10 +406,9 @@ async function testUrlAccessibility(url, label) {
  * 使用多模态模型分析视频摘要（通过代理解决加密链接问题）
  * @param {string} videoUrl - 视频地址
  * @param {string} videoTitle - 视频标题
- * @param {string} coverUrl - 封面图片地址（可选）
  * @returns {Promise<Object>} 分析结果
  */
-async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle, coverUrl = null) {
+async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle) {
     const base_url = 'https://api-inference.modelscope.cn/v1';
     const api_key = 'ms-871280c4-7729-4d3c-bc74-9fbd22dd9660';
     
@@ -532,33 +417,17 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle, coverUrl = 
     console.log(`🔗 视频地址: ${videoUrl}...`);
     
     try {
-        // 构建多模态内容，优先使用封面图片，如果没有则使用视频URL
-        let content;
-        if (coverUrl) {
-            // 使用封面图片进行视觉分析，避免直接访问加密视频
-            content = [
-                {
-                    type: 'video_url',
-                    video_url: coverUrl
-                },
-                {
-                    type: 'text',
-                    text: `分析这个视频并提取摘要信息。`
-                }
-            ];
-        } else {
-            // 回退到文本分析
-            content = [
-                {
-                    type: 'video_url',
-                    video_url: 'https://upos-sz-estgcos.bilivideo.com/upgcxcode/79/55/34304885579/34304885579-1-192.mp4?e=ig8euxZM2rNcNbRVhwdVhwdlhWdVhwdVhoNvNC8BqJIzNbfq9rVEuxTEnE8L5F6VnEsSTx0vkX8fqJeYTj_lta53NCM=&deadline=1764493371&nbs=1&oi=1851223417&trid=336ba0c9c7f8423ca98fa7e316abd27h&gen=playurlv3&os=estgcos&platform=html5&mid=0&uipk=5&og=cos&upsig=b0b2217408d91c3b979d5add35c1e120&uparams=e,deadline,nbs,oi,trid,gen,os,platform,mid,uipk,og&bvc=vod&nettype=0&bw=774794&f=h_0_0&agrr=1&buvid=&build=0&dl=0&orderid=0,1'
-                },
-                {
-                    type: 'text',
-                    text: `分析这个视频并提取摘要信息。`
-                }
-            ];
-        }
+        // 构建多模态内容
+        const content = [
+            {
+                type: 'video_url',
+                video_url: videoUrl
+            },
+            {
+                type: 'text',
+                text: `分析这个视频并提取摘要信息。`
+            }
+        ];
         
         const requestBody = {
             model: 'Qwen/Qwen3-VL-8B-Instruct',
@@ -580,7 +449,6 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle, coverUrl = 
             },
             body: JSON.stringify(requestBody)
         });
-        console.log(`🔑 请求体: ${JSON.stringify(requestBody)}`);
         
         const responseText = await response.text();
         
@@ -607,9 +475,7 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle, coverUrl = 
             summary: analysisResult,
             model: 'Qwen/Qwen3-VL-8B-Instruct',
             videoUrl: videoUrl,
-            videoTitle: videoTitle,
-            analysisType: coverUrl ? 'image-based' : 'text-based',
-            coverUrl: coverUrl
+            videoTitle: videoTitle
         };
         
     } catch (error) {

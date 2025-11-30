@@ -202,8 +202,6 @@ async function analyzeVideoWithMultimodalModel(videoUrl, videoTitle, coverUrl = 
                     content: content
                 }
             ],
-            max_tokens: 1000,
-            temperature: 0.7
         };
 
         console.log('📝 请求体:', JSON.stringify(requestBody));
