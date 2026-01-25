@@ -378,9 +378,10 @@ class BilibiliContentScript {
 
       console.log('✅ 视频播放地址获取成功:', videoUrls.length > 0 ? videoUrls[0].url.substring(0, 100) + '...' : '无地址');
 
-      // 准备分析数据 - 使用正确的URL结构
+      // 准备分析数据 - 使用实际的MP4视频URL
       const videoData = {
-        // Zhipu API 需要 BV 号或页面 URL，而不是直接的 MP4 URL
+        // 传递实际的MP4视频URL，而不仅仅是BV号
+        videoUrl: videoUrls[0].url,
         bvid: this.currentVideoInfo.bvid,
         pageUrl: this.currentVideoInfo.url,
         title: videoInfo.title,
@@ -1113,14 +1114,20 @@ class BilibiliContentScript {
       statusBadge.textContent = '生成失败';
     }
 
-    // 显示错误信息
-    const contentEl = this.currentModal.querySelector('#streamContent');
-    if (contentEl) {
-      // 移除加载动画
-      const loadingEl = contentEl.querySelector('.loading-indicator');
+    // 移除加载动画（从modal-body中查找）
+    const modalBody = this.currentModal.querySelector('.modal-body');
+    if (modalBody) {
+      const loadingEl = modalBody.querySelector('.loading-indicator');
       if (loadingEl) {
         loadingEl.remove();
       }
+    }
+
+    // 显示错误信息
+    const contentEl = this.currentModal.querySelector('#streamContent');
+    if (contentEl) {
+      // 清空内容
+      contentEl.innerHTML = '';
 
       // 添加错误信息
       const errorDiv = document.createElement('div');

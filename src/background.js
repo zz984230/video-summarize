@@ -163,25 +163,27 @@ class BackgroundService {
     console.log('🎬 [Background] Starting stream analysis:', videoData.title || videoData.bvid);
 
     try {
-      // 尝试多种格式：BV号、页面URL、直接视频URL
-      // Zhipu GLM-4.6V 可能支持不同的视频格式
-      let videoIdentifier = videoData.bvid;
+      // 优先使用实际的MP4视频URL，如果不可用则尝试其他格式
+      let videoIdentifier = null;
 
-      // 如果 bvid 不存在，尝试 pageUrl
-      if (!videoIdentifier && videoData.pageUrl) {
+      // 首选：直接的MP4视频URL
+      if (videoData.videoUrl) {
+        videoIdentifier = videoData.videoUrl;
+      }
+      // 备选：页面URL
+      else if (videoData.pageUrl) {
         videoIdentifier = videoData.pageUrl;
       }
-
-      // 如果都不存在，尝试直接视频 URL（如果有的话）
-      if (!videoIdentifier && videoData.videoUrl) {
-        videoIdentifier = videoData.videoUrl;
+      // 最后备选：BV号
+      else if (videoData.bvid) {
+        videoIdentifier = videoData.bvid;
       }
 
       if (!videoIdentifier) {
         throw new Error('视频标识符为空');
       }
 
-      this.sendDebugMessage(`bg_video_identifier: ${videoIdentifier}`, senderTabId);
+      this.sendDebugMessage(`bg_video_identifier: ${videoIdentifier.substring(0, 100)}`, senderTabId);
       this.sendDebugMessage(`bg_identifier_type: ${videoIdentifier.startsWith('http') ? 'URL' : 'BV ID'}`, senderTabId);
 
       // 构建提示词
