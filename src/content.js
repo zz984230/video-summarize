@@ -834,6 +834,148 @@ class BilibiliContentScript {
     }
   }
 
+  appendStreamContent(text) {
+    if (!this.currentModal) return;
+
+    const contentEl = this.currentModal.querySelector('#streamContent');
+
+    // 移除加载动画
+    const loadingEl = contentEl.querySelector('.loading-indicator');
+    if (loadingEl) {
+      loadingEl.remove();
+    }
+
+    // 追加内容
+    const span = document.createElement('span');
+    span.textContent = text;
+    contentEl.appendChild(span);
+
+    // 保存完整内容
+    this.fullContent += text;
+
+    // 自动滚动到底部（检测用户是否在滚动）
+    const isNearBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 50;
+    if (isNearBottom) {
+      contentEl.scrollTop = contentEl.scrollHeight;
+    }
+  }
+
+  onStreamComplete(fullContent) {
+    if (!this.currentModal) return;
+
+    // 更新状态徽章
+    const statusBadge = this.currentModal.querySelector('.status-badge');
+    if (statusBadge) {
+      statusBadge.classList.remove('generating');
+      statusBadge.classList.add('completed');
+      statusBadge.textContent = '生成完成';
+    }
+
+    // 启用复制按钮
+    const copyBtn = this.currentModal.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.disabled = false;
+    }
+
+    // 更新标题
+    const title = this.currentModal.querySelector('.modal-header h3');
+    if (title) {
+      title.textContent = '🎬 视频分析完成';
+    }
+
+    // 保存到历史记录
+    this.saveToHistory(fullContent);
+  }
+
+  onStreamError(error) {
+    if (!this.currentModal) return;
+
+    // 更新状态徽章
+    const statusBadge = this.currentModal.querySelector('.status-badge');
+    if (statusBadge) {
+      statusBadge.classList.remove('generating');
+      statusBadge.style.background = '#fee2e2';
+      statusBadge.style.color = '#991b1b';
+      statusBadge.textContent = '生成失败';
+    }
+
+    // 显示错误信息
+    const contentEl = this.currentModal.querySelector('#streamContent');
+    if (contentEl) {
+      // 移除加载动画
+      const loadingEl = contentEl.querySelector('.loading-indicator');
+      if (loadingEl) {
+        loadingEl.remove();
+      }
+
+      // 添加错误信息
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error-message';
+      errorDiv.style.cssText = `
+        padding: 16px;
+        background: #fee2e2;
+        border-left: 4px solid #ef4444;
+        border-radius: 8px;
+        color: #991b1b;
+        margin-top: 16px;
+      `;
+      errorDiv.innerHTML = `
+        <strong>❌ 分析失败</strong><br>
+        ${this.escapeHtml(error.message || '未知错误')}
+      `;
+      contentEl.appendChild(errorDiv);
+    }
+
+    // 更新标题
+    const title = this.currentModal.querySelector('.modal-header h3');
+    if (title) {
+      title.textContent = '🎬 视频分析失败';
+    }
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  async saveToHistory(content) {
+    try {
+      if (!this.currentVideoInfo) {
+        console.warn('没有视频信息，跳过历史记录保存');
+        return;
+      }
+
+      const historyItem = {
+        id: Date.now(),
+        bvid: this.currentVideoInfo.bvid,
+        title: this.currentVideoInfo.title,
+        owner: this.currentVideoInfo.owner,
+        duration: this.currentVideoInfo.duration,
+        url: this.currentVideoInfo.url,
+        summary: content,
+        createdAt: new Date().toISOString()
+      };
+
+      // 从存储中获取现有历史记录
+      const result = await this.sendMessageToBackground('GET_HISTORY');
+      const history = result.history || [];
+
+      // 添加新记录到开头
+      history.unshift(historyItem);
+
+      // 限制历史记录数量（最多保存100条）
+      const limitedHistory = history.slice(0, 100);
+
+      // 保存到存储
+      await this.sendMessageToBackground('SAVE_HISTORY', { history: limitedHistory });
+
+      console.log('✅ 历史记录保存成功:', historyItem);
+    } catch (error) {
+      console.error('❌ 保存历史记录失败:', error);
+    }
+  }
+
   sendMessageToBackground(action, data) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ action, data }, resolve);
