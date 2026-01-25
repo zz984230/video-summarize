@@ -6,7 +6,15 @@ class BilibiliContentScript {
     this.parser = new BilibiliVideoParser();
     this.currentVideoUrl = null;
     this.isVideoPage = false;
+    // 新增：流式相关状态
+    this.currentModal = null;
+    this.fullContent = '';
     this.init();
+
+    // 页面卸载时清理
+    window.addEventListener('beforeunload', () => {
+      this.closeModal();
+    });
   }
 
   init() {
@@ -285,6 +293,34 @@ class BilibiliContentScript {
     document.body.appendChild(button);
   }
 
+  createStreamModal() {
+    const modal = document.createElement('div');
+    modal.className = 'stream-modal';
+    modal.innerHTML = `
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>🎬 视频分析中...</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="loading-indicator">
+            <div class="spinner"></div>
+            <p>AI正在观看视频并生成摘要</p>
+          </div>
+          <div class="stream-content" id="streamContent"></div>
+        </div>
+        <div class="modal-footer">
+          <span class="status-badge generating">生成中</span>
+          <button class="copy-btn" disabled>复制结果</button>
+        </div>
+      </div>
+    `;
+    this.addModalStyles(modal);
+    this.bindModalEvents(modal);
+    return modal;
+  }
+
   async onSummaryButtonClick() {
     try {
       console.log('🔄 点击AI摘要按钮，开始分析...');
@@ -501,6 +537,300 @@ class BilibiliContentScript {
         <span class="btn-icon">🤖</span>
         <span class="btn-text">AI摘要</span>
       `;
+    }
+  }
+
+  addModalStyles(modal) {
+    const style = document.createElement('style');
+    style.className = 'stream-modal-styles';
+    style.textContent = `
+      .stream-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 20000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.3s ease;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      .stream-modal .modal-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+      }
+
+      .stream-modal .modal-content {
+        position: relative;
+        background: white;
+        border-radius: 16px;
+        max-width: 700px;
+        max-height: 85vh;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.3s ease;
+        display: flex;
+        flex-direction: column;
+      }
+
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .stream-modal .modal-header {
+        padding: 24px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px 16px 0 0;
+      }
+
+      .stream-modal .modal-header h3 {
+        margin: 0;
+        color: white;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .stream-modal .close-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        font-size: 28px;
+        cursor: pointer;
+        color: white;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        line-height: 1;
+        padding: 0;
+      }
+
+      .stream-modal .close-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: rotate(90deg);
+      }
+
+      .stream-modal .modal-body {
+        padding: 24px;
+        max-height: 500px;
+        overflow-y: auto;
+        flex: 1;
+      }
+
+      .stream-modal .loading-indicator {
+        text-align: center;
+        padding: 40px 20px;
+      }
+
+      .stream-modal .spinner {
+        width: 50px;
+        height: 50px;
+        margin: 0 auto 20px;
+        border: 4px solid #f3f4f6;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .stream-modal .loading-indicator p {
+        color: #6b7280;
+        font-size: 15px;
+        margin: 0;
+      }
+
+      .stream-modal .stream-content {
+        margin-top: 20px;
+        line-height: 1.8;
+        color: #374151;
+        font-size: 15px;
+      }
+
+      .stream-modal .stream-content .chunk {
+        padding: 12px;
+        margin-bottom: 12px;
+        background: #f9fafb;
+        border-radius: 8px;
+        border-left: 3px solid #667eea;
+        animation: slideIn 0.3s ease;
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateX(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      .stream-modal .modal-footer {
+        padding: 20px 24px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f9fafb;
+        border-radius: 0 0 16px 16px;
+      }
+
+      .stream-modal .status-badge {
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .stream-modal .status-badge.generating {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+
+      .stream-modal .status-badge.generating::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: #3b82f6;
+        border-radius: 50%;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
+      .stream-modal .status-badge.completed {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      .stream-modal .status-badge.completed::before {
+        content: '✓';
+        font-weight: bold;
+      }
+
+      .stream-modal .copy-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      }
+
+      .stream-modal .copy-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+
+      .stream-modal .copy-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .stream-modal .copy-btn.copied {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  bindModalEvents(modal) {
+    // 关闭按钮
+    const closeBtn = modal.querySelector('.close-btn');
+    closeBtn.addEventListener('click', () => {
+      this.closeModal();
+    });
+
+    // 点击遮罩关闭
+    const overlay = modal.querySelector('.modal-overlay');
+    overlay.addEventListener('click', () => {
+      this.closeModal();
+    });
+
+    // 复制按钮
+    const copyBtn = modal.querySelector('.copy-btn');
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(this.fullContent);
+        copyBtn.textContent = '已复制!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = '复制结果';
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      } catch (error) {
+        console.error('复制失败:', error);
+        alert('复制失败，请手动复制');
+      }
+    });
+
+    // ESC键关闭
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        this.closeModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    modal._escapeHandler = handleEscape;
+  }
+
+  closeModal() {
+    if (this.currentModal) {
+      // 移除键盘事件监听
+      if (this.currentModal._escapeHandler) {
+        document.removeEventListener('keydown', this.currentModal._escapeHandler);
+      }
+
+      // 移除弹窗
+      document.body.removeChild(this.currentModal);
+
+      // 移除样式
+      const style = document.querySelector('.stream-modal-styles');
+      if (style) {
+        document.head.removeChild(style);
+      }
+
+      this.currentModal = null;
+      this.fullContent = '';
     }
   }
 
