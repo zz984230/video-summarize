@@ -80,8 +80,8 @@ class OptionsController {
       const result = await chrome.storage.sync.get(['apiKey', 'apiUrl', 'modelId']);
       
       this.apiKey = result.apiKey || '';
-      this.apiUrl = result.apiUrl || 'https://open.bigmodel.cn/api/paas/v4';
-      this.modelId = result.modelId || 'glm-4.6v-flash';
+      this.apiUrl = result.apiUrl || 'https://api-inference.modelscope.cn/v1';
+      this.modelId = result.modelId || 'Qwen/Qwen3-VL-8B-Instruct';
       
       // 填充表单
       const apiKeyInput = document.getElementById('apiKey');

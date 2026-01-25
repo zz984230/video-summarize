@@ -124,8 +124,8 @@ class BackgroundService {
 
       const config = {
         apiKey: result.apiKey,
-        apiUrl: result.apiUrl || 'https://open.bigmodel.cn/api/paas/v4',
-        modelId: result.modelId || 'glm-4.6v-flash'
+        apiUrl: result.apiUrl || 'https://api-inference.modelscope.cn/v1',
+        modelId: result.modelId || 'Qwen/Qwen3-VL-8B-Instruct'
       };
       console.log('✅ [Background] Config prepared:', { apiUrl: config.apiUrl, modelId: config.modelId });
 
