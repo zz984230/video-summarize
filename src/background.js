@@ -60,7 +60,10 @@ class BackgroundService {
           
         case 'TEST_API_KEY':
           return await this.testApiKey(request.apiKey, sendResponse);
-          
+
+        case 'START_STREAM_ANALYSIS':
+          return await this.handleStreamAnalysis(request.data, sendResponse);
+
         default:
           console.warn('⚠️ 未知的消息类型:', request.action);
           sendResponse({ success: false, error: '未知消息类型' });
@@ -146,7 +149,7 @@ class BackgroundService {
         videoUrl: 'https://example.com/test.mp4',
         title: '测试视频'
       }, 'summary');
-      
+
       sendResponse({
         success: result.success,
         error: result.success ? null : result.error
@@ -157,6 +160,57 @@ class BackgroundService {
         error: error.message
       });
     }
+  }
+
+  async handleStreamAnalysis(data, sendResponse) {
+    const { videoData, analysisType } = data;
+
+    try {
+      console.log('🎬 [Background] Starting stream analysis for:', videoData.bvid);
+
+      // 从存储获取API配置
+      const result = await chrome.storage.sync.get(['apiKey', 'apiUrl', 'modelId']);
+
+      if (!result.apiKey) {
+        sendResponse({
+          success: false,
+          error: '请先在设置页面配置API密钥'
+        });
+        return;
+      }
+
+      const config = {
+        apiKey: result.apiKey,
+        apiUrl: result.apiUrl || 'https://open.bigmodel.cn/api/paas/v4',
+        modelId: result.modelId || 'glm-4.6v-flash'
+      };
+
+      // 发送流式分析请求
+      await this.streamVideoAnalysis(videoData, analysisType, config);
+
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('❌ [Background] Stream analysis failed:', error);
+      sendResponse({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  async streamVideoAnalysis(videoData, analysisType, config) {
+    // TODO: Task 8 will implement the actual streaming logic
+    // This function will:
+    // 1. Build the prompt
+    // 2. Call Zhipu API with stream: true
+    // 3. Parse SSE responses
+    // 4. Send chunks to content script
+    console.log('🎬 [Background] Starting stream analysis:', videoData.bvid);
+    console.log('📊 [Background] Analysis type:', analysisType);
+    console.log('⚙️ [Background] Config:', {
+      apiUrl: config.apiUrl,
+      modelId: config.modelId
+    });
   }
 
   // 通知相关方法
