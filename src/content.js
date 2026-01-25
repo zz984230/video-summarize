@@ -331,15 +331,37 @@ class BilibiliContentScript {
         throw new Error('未找到视频信息，请刷新页面重试');
       }
 
-      // 直接从DOM获取基本信息，无需调用B站API
+      // 从DOM获取基本信息（快速）
+      const title = this.getVideoTitle();
+      const owner = this.getVideoOwner();
+
+      console.log('📋 DOM信息:', { title, owner });
+
+      // 获取视频播放地址（多模态API需要）
+      console.log('🔍 获取视频播放地址...');
+      const videoInfo = await this.parser.getVideoInfo(this.currentVideoInfo.bvid);
+      const videoUrls = await this.parser.getVideoUrls(
+        videoInfo.aid,
+        videoInfo.pages[0].cid,
+        64  // 720P质量
+      );
+
+      if (!videoUrls || videoUrls.length === 0) {
+        throw new Error('无法获取视频播放地址');
+      }
+
+      console.log('✅ 视频地址获取成功');
+
+      // 准备分析数据
       const videoData = {
+        videoUrl: videoUrls[0].url,
         bvid: this.currentVideoInfo.bvid,
         pageUrl: window.location.href,
-        title: this.getVideoTitle(),
-        owner: this.getVideoOwner()
+        title: title,
+        owner: owner
       };
 
-      console.log('✅ 视频信息已准备:', videoData);
+      console.log('📦 准备发送请求:', { title, hasVideoUrl: !!videoData.videoUrl });
 
       // 创建流式模态框
       this.currentModal = this.createStreamModal();
@@ -352,7 +374,7 @@ class BilibiliContentScript {
       // 设置按钮加载状态
       this.setButtonLoading(true);
 
-      // 立即发送请求（无需等待B站API）
+      // 发送请求
       chrome.runtime.sendMessage({
         action: 'START_STREAM_ANALYSIS',
         data: {
@@ -366,7 +388,7 @@ class BilibiliContentScript {
           return;
         }
         if (!response) {
-          this.onStreamError('后台服务无响应，请检查扩展是否正常运行');
+          this.onStreamError('后台服务无响应');
           this.setButtonLoading(false);
           return;
         }
@@ -375,6 +397,7 @@ class BilibiliContentScript {
           this.setButtonLoading(false);
           return;
         }
+        console.log('✅ 分析请求已发送');
       });
 
     } catch (error) {
