@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 - B站视频摘要助手</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .logo {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .input-group {
+      position: relative;
+    }
+
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+
+    input[type="password"]:focus, input[type="text"]:focus {
+      background: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+    }
+
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      opacity: 0.7;
+      transition: opacity 0.3s ease;
+    }
+
+    .toggle-password:hover {
+      opacity: 1;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #667eea;
+    }
+
+    .checkbox-group label {
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .status.loading {
+      background: rgba(255, 193, 7, 0.2);
+      color: #ffc107;
+      border: 1px solid rgba(255, 193, 7, 0.4);
+    }
+
+    .status.success {
+      background: rgba(40, 167, 69, 0.2);
+      color: #28a745;
+      border: 1px solid rgba(40, 167, 69, 0.4);
+    }
+
+    .status.error {
+      background: rgba(220, 53, 69, 0.2);
+      color: #dc3545;
+      border: 1px solid rgba(220, 53, 69, 0.4);
+    }
+
+    .help-text {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #dc3545;
+    }
+
+    .status-indicator.connected {
+      background: #28a745;
+    }
+
+    .api-url {
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px;
+      border-radius: 6px;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .version {
+      font-size: 12px;
+      opacity: 0.7;
+    }
+
+    .features-list {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .feature-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🤖</div>
+      <div class="title">B站视频摘要助手</div>
+      <div class="subtitle">多模态AI视频分析工具</div>
+    </div>
+
+    <!-- 状态显示 -->
+    <div class="status" id="status"></div>
+
+    <!-- 功能介绍 -->
+    <div class="section">
+      <div class="section-title">
+        <span>✨</span>
+        <span>功能介绍</span>
+      </div>
+      <div class="features-list">
+        <div class="feature-item">
+          <span>🎬</span>
+          <span>自动识别B站视频页面</span>
+        </div>
+        <div class="feature-item">
+          <span>🤖</span>
+          <span>多模态AI深度分析</span>
+        </div>
+        <div class="feature-item">
+          <span>📝</span>
+          <span>智能生成内容摘要</span>
+        </div>
+        <div class="feature-item">
+          <span>📋</span>
+          <span>一键复制分析结果</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- API配置 -->
+    <div class="section">
+      <div class="section-title">
+        <span>🔑</span>
+        <span>API配置</span>
+      </div>
+
+      <div class="form-group">
+        <label class="label" for="apiUrl">大模型API地址</label>
+        <input type="text" id="apiUrl" placeholder="https://api-inference.modelscope.cn/v1" value="https://api-inference.modelscope.cn/v1">
+        <div class="help-text">
+          配置您的多模态AI服务地址，支持DashScope API
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="label" for="modelId">模型ID</label>
+        <input type="text" id="modelId" placeholder="例如：Qwen/Qwen3-VL-8B-Instruct" value="Qwen/Qwen3-VL-8B-Instruct">
+        <div class="help-text">
+          输入要使用的多模态模型ID，支持如：Qwen/Qwen2-VL-7B-Instruct、Qwen/Qwen3-VL-8B-Instruct等
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="label" for="apiKey">API密钥</label>
+        <div class="input-wrapper">
+          <input type="password" id="apiKey" placeholder="请输入API密钥..." autocomplete="off">
+          <button type="button" class="toggle-password" id="togglePassword">👁️</button>
+        </div>
+        <div class="api-status">
+          <div class="status-indicator" id="statusIndicator"></div>
+          <span id="connectionStatus">未连接</span>
+        </div>
+        <div class="help-text">
+          从 <a href="https://dashscope.console.aliyun.com/" target="_blank" style="color: white; text-decoration: underline;">阿里云DashScope</a> 获取API密钥
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button class="btn btn-primary" id="testBtn">
+          <span class="btn-icon">🔍</span>
+          测试连接
+        </button>
+        <button class="btn btn-secondary" id="saveBtn">
+          <span class="btn-icon">💾</span>
+          保存配置
+        </button>
+      </div>
+    </div>
+
+    <!-- 使用说明 -->
+    <div class="section">
+      <div class="section-title">
+        <span>📖</span>
+        <span>使用说明</span>
+      </div>
+      <div class="features-list">
+        <div class="feature-item">
+          <span>1.</span>
+          <span>在B站视频页面点击右上角插件图标</span>
+        </div>
+        <div class="feature-item">
+          <span>2.</span>
+          <span>或使用视频页面右侧的悬浮"AI摘要"按钮</span>
+        </div>
+        <div class="feature-item">
+          <span>3.</span>
+          <span>选择分析类型，点击开始分析</span>
+        </div>
+        <div class="feature-item">
+          <span>4.</span>
+          <span>等待AI生成视频内容摘要</span>
+        </div>
+        <div class="feature-item">
+          <span>5.</span>
+          <span>复制结果或保存到本地</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分析类型 -->
+    <div class="section">
+      <div class="section-title">
+        <span>🎯</span>
+        <span>分析类型</span>
+      </div>
+      <div class="features-list">
+        <div class="feature-item">
+          <span>📝</span>
+          <span><strong>综合摘要:</strong> 全面分析视频内容和价值</span>
+        </div>
+        <div class="feature-item">
+          <span>⚙️</span>
+          <span><strong>技术分析:</strong> 专注技术要点和实现细节</span>
+        </div>
+        <div class="feature-item">
+          <span>🎓</span>
+          <span><strong>教育价值:</strong> 评估学习价值和教育意义</span>
+        </div>
+        <div class="feature-item">
+          <span>🎭</span>
+          <span><strong>娱乐分析:</strong> 分析娱乐性和趣味性</span>
+        </div>
+        <div class="feature-item">
+          <span>📋</span>
+          <span><strong>简洁摘要:</strong> 生成简洁明了的摘要</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="version">版本 1.0.0 | 基于多模态AI技术</div>
+    </div>
+  </div>
+
+  <!-- options.js will be injected by HtmlWebpackPlugin -->
+</body>
+</html>

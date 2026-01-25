@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站视频摘要助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 400px;
+            min-height: 500px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        
+        .container {
+            background: white;
+            min-height: 500px;
+            position: relative;
+        }
+        
+        .header {
+            position: relative;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+        
+        .header .subtitle {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        
+        .settings-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .settings-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: rotate(90deg);
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        .tab.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .url-section {
+            margin-bottom: 20px;
+        }
+        
+        .url-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .url-display {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            font-size: 11px;
+            word-break: break-all;
+            margin-bottom: 15px;
+        }
+        
+        .generate-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .generate-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .generate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .summary-section {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .summary-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .summary-content {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        
+        .history-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            margin-bottom: 10px;
+        }
+        
+        .history-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .history-summary {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+        
+        .history-meta {
+            font-size: 10px;
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #fcc;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #cfc;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .empty-state-text {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <button class="settings-btn" id="settingsBtn" title="设置">
+                ⚙️
+            </button>
+            <h1>B站视频摘要助手</h1>
+            <div class="subtitle">智能提取视频内容要点</div>
+        </div>
+
+        <!-- 标签页切换 -->
+        <div class="tabs">
+            <button class="tab active" data-tab="main">主页</button>
+            <button class="tab" data-tab="history">历史</button>
+        </div>
+
+        <!-- 主页内容 -->
+        <div class="tab-content active" id="main-content">
+            <!-- URL显示区域 -->
+            <div class="url-section">
+                <div class="url-label">当前页面URL</div>
+                <div class="url-display" id="currentUrl">正在获取...</div>
+            </div>
+
+            <!-- 生成按钮 -->
+            <button class="generate-btn" id="generateBtn">生成视频摘要</button>
+
+            <!-- 摘要结果显示区域 -->
+            <div class="summary-section" id="summarySection" style="display: none;">
+                <div class="summary-title">视频摘要</div>
+                <div class="summary-content" id="summaryContent"></div>
+            </div>
+
+            <!-- 加载状态 -->
+            <div class="loading" id="loadingState" style="display: none;">
+                正在分析视频内容...
+            </div>
+
+            <!-- 错误状态 -->
+            <div class="error-message" id="errorState" style="display: none;"></div>
+
+            <!-- 成功状态 -->
+            <div class="success-message" id="successState" style="display: none;"></div>
+        </div>
+
+        <!-- 历史记录内容 -->
+        <div class="tab-content" id="history-content">
+            <div id="historyList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📝</div>
+                    <div class="empty-state-text">暂无历史记录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
