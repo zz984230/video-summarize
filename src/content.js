@@ -325,42 +325,41 @@ class BilibiliContentScript {
   async onSummaryButtonClick() {
     try {
       console.log('🔄 点击AI摘要按钮，开始分析...');
-      this.showLoadingState();
-      
+
       // 检查是否有当前视频信息
       if (!this.currentVideoInfo) {
         throw new Error('未找到视频信息，请刷新页面重试');
       }
-      
+
       console.log('✅ 当前视频信息:', this.currentVideoInfo);
-      
+
       // 获取当前页面视频信息 - 使用测试文件中验证过的方法
       console.log('🔍 开始获取视频详细信息...');
       const videoInfo = await this.parser.getVideoInfo(this.currentVideoInfo.bvid);
-      
+
       console.log('✅ 视频基本信息获取成功:', {
         bvid: videoInfo.bvid,
         title: videoInfo.title,
         aid: videoInfo.aid,
         cid: videoInfo.pages[0].cid
       });
-      
+
       // 获取播放地址 - 修复API调用参数问题
       console.log('🔍 开始获取视频播放地址...');
       const videoUrls = await this.parser.getVideoUrls(
-        videoInfo.aid, 
-        videoInfo.pages[0].cid, 
+        videoInfo.aid,
+        videoInfo.pages[0].cid,
         64  // 720P质量
       );
-      
+
       if (!videoUrls || videoUrls.length === 0) {
         throw new Error('无法获取视频播放地址');
       }
-      
+
       console.log('✅ 视频播放地址获取成功:', videoUrls.length > 0 ? videoUrls[0].url.substring(0, 100) + '...' : '无地址');
-      
+
       // 准备分析数据 - 使用正确的URL结构
-      const analysisData = {
+      const videoData = {
         videoUrl: videoUrls[0].url,  // 使用第一个分段的URL
         title: videoInfo.title,
         owner: videoInfo.owner.name || videoInfo.owner,  // 兼容不同格式
@@ -369,23 +368,32 @@ class BilibiliContentScript {
         pages: videoInfo.pages.length
       };
 
-      console.log('📦 准备发送分析请求:', analysisData);
+      console.log('📦 准备发送流式分析请求:', videoData);
 
-      // 发送分析请求到后台
-      console.log('📤 发送分析请求到后台...');
-      const result = await this.sendMessageToBackground('ANALYZE_VIDEO', {
-        videoData: analysisData,
-        analysisType: 'general'
+      // 创建流式模态框
+      this.currentModal = this.createStreamModal();
+      document.body.appendChild(this.currentModal);
+
+      // 重置内容
+      this.fullContent = '';
+
+      // 设置按钮加载状态
+      this.setButtonLoading(true);
+
+      // 发送流式分析请求
+      chrome.runtime.sendMessage({
+        action: 'START_STREAM_ANALYSIS',
+        data: {
+          videoData: videoData,
+          analysisType: 'general'
+        }
+      }, (response) => {
+        if (response && !response.success) {
+          this.onStreamError(response.error || '启动分析失败');
+          this.setButtonLoading(false);
+        }
       });
 
-      console.log('📥 收到后台响应:', result);
-
-      if (result.success) {
-        this.showAnalysisResult(result);
-      } else {
-        this.showError('分析失败', result.error || '未知错误');
-      }
-      
     } catch (error) {
       console.error('❌ 摘要生成失败:', error);
       console.error('❌ 错误堆栈:', error.stack);
@@ -401,6 +409,24 @@ class BilibiliContentScript {
         <span class="btn-icon">⏳</span>
         <span class="btn-text">分析中...</span>
       `;
+    }
+  }
+
+  setButtonLoading(loading) {
+    const button = document.querySelector('.bilibili-summary-btn');
+    if (button) {
+      button.disabled = loading;
+      if (loading) {
+        button.innerHTML = `
+          <span class="btn-icon">⏳</span>
+          <span class="btn-text">分析中...</span>
+        `;
+      } else {
+        button.innerHTML = `
+          <span class="btn-icon">🤖</span>
+          <span class="btn-text">AI摘要</span>
+        `;
+      }
     }
   }
 
@@ -832,6 +858,9 @@ class BilibiliContentScript {
 
       this.currentModal = null;
       this.fullContent = '';
+
+      // 重置按钮状态
+      this.setButtonLoading(false);
     }
   }
 
@@ -864,6 +893,9 @@ class BilibiliContentScript {
   onStreamComplete(fullContent) {
     if (!this.currentModal) return;
 
+    // 重置按钮状态
+    this.setButtonLoading(false);
+
     // 更新状态徽章
     const statusBadge = this.currentModal.querySelector('.status-badge');
     if (statusBadge) {
@@ -890,6 +922,9 @@ class BilibiliContentScript {
 
   onStreamError(error) {
     if (!this.currentModal) return;
+
+    // 重置按钮状态
+    this.setButtonLoading(false);
 
     // 更新状态徽章
     const statusBadge = this.currentModal.querySelector('.status-badge');
