@@ -200,7 +200,7 @@ class BackgroundService {
             { type: 'text', text: prompt }
           ]
         }],
-        max_tokens: 1000,
+        max_tokens: 800,
         temperature: 0.7
       };
 
@@ -267,38 +267,43 @@ class BackgroundService {
   buildAnalysisPrompt(videoData, analysisType) {
     const baseInfo = {
       title: videoData.title,
-      owner: videoData.owner,
-      duration: videoData.duration,
-      view: videoData.view
+      owner: videoData.owner
     };
 
-    const prompts = {
-      general: `请详细分析这个视频的内容，包括：
-1. 视频主题和核心内容
-2. 主要观点和关键信息
-3. 值得注意的细节
-4. 总结和评价
+    // 简化的文字摘要提示词 - 只分析文字内容，500字左右
+    const summaryPrompt = `请为这个B站视频生成简洁的文字摘要（500字以内）。
 
 视频信息：
 - 标题：${baseInfo.title}
 - UP主：${baseInfo.owner}
-- 时长：${baseInfo.duration}
-- 播放量：${baseInfo.view}`,
 
-      summary: `请为这个视频生成简洁的摘要（200字以内）。
+请从以下角度分析：
+1. 视频主题：一句话概括视频讲什么
+2. 核心观点：提取2-3个主要观点或信息点
+3. 关键细节：重要的数据、案例或说明
 
-视频信息：
-- 标题：${baseInfo.title}
-- UP主：${baseInfo.owner}`,
+要求：
+- 只基于标题和可能的文字内容进行提取
+- 不要描述视频画面、UP主语气或说话风格
+- 使用简洁的段落式表达
+- 每个部分用空行分隔
 
-      technical: `请从技术角度分析这个视频。
+输出格式：
+视频主题
+[内容]
 
-视频信息：
-- 标题：${baseInfo.title}
-- UP主：${baseInfo.owner}`
+核心观点
+[内容]
+
+关键细节
+[内容]`;
+
+    const prompts = {
+      summary: summaryPrompt,
+      general: summaryPrompt
     };
 
-    return prompts[analysisType] || prompts.general;
+    return prompts[analysisType] || prompts.summary;
   }
 
   async parseSSEStream(response, bvid, senderTabId) {

@@ -323,140 +323,100 @@ class BilibiliContentScript {
   }
 
   async onSummaryButtonClick() {
-    // DEBUG: Write to DOM for debugging
-    const debugEl = document.createElement('div');
-    debugEl.id = 'bilibili-debug-info';
-    debugEl.style.display = 'none';
-    debugEl.setAttribute('data-timestamp', Date.now());
-    document.body.appendChild(debugEl);
-
-    const updateDebug = (key, value) => {
-      debugEl.setAttribute(`data-${key}`, JSON.stringify(value));
-    };
-
-    updateDebug('step', 'onSummaryButtonClick_start');
     try {
       console.log('🔄 点击AI摘要按钮，开始分析...');
-      updateDebug('step', 'try_block_entered');
 
       // 检查是否有当前视频信息
       if (!this.currentVideoInfo) {
-        updateDebug('error', 'No currentVideoInfo');
         throw new Error('未找到视频信息，请刷新页面重试');
       }
-      updateDebug('step', 'currentVideoInfo_checked');
 
-      console.log('✅ 当前视频信息:', this.currentVideoInfo);
-      updateDebug('videoInfo', JSON.stringify(this.currentVideoInfo));
-
-      // 获取当前页面视频信息 - 使用测试文件中验证过的方法
-      console.log('🔍 开始获取视频详细信息...');
-      updateDebug('step', 'fetching_video_info');
-      const videoInfo = await this.parser.getVideoInfo(this.currentVideoInfo.bvid);
-      updateDebug('step', 'video_info_fetched');
-
-      console.log('✅ 视频基本信息获取成功:', {
-        bvid: videoInfo.bvid,
-        title: videoInfo.title,
-        aid: videoInfo.aid,
-        cid: videoInfo.pages[0].cid
-      });
-
-      // 获取播放地址 - 修复API调用参数问题
-      console.log('🔍 开始获取视频播放地址...');
-      updateDebug('step', 'fetching_video_urls');
-      const videoUrls = await this.parser.getVideoUrls(
-        videoInfo.aid,
-        videoInfo.pages[0].cid,
-        64  // 720P质量
-      );
-      updateDebug('step', 'video_urls_fetched');
-
-      if (!videoUrls || videoUrls.length === 0) {
-        throw new Error('无法获取视频播放地址');
-      }
-
-      console.log('✅ 视频播放地址获取成功:', videoUrls.length > 0 ? videoUrls[0].url.substring(0, 100) + '...' : '无地址');
-
-      // 准备分析数据 - 使用实际的MP4视频URL
+      // 直接从DOM获取基本信息，无需调用B站API
       const videoData = {
-        // 传递实际的MP4视频URL，而不仅仅是BV号
-        videoUrl: videoUrls[0].url,
         bvid: this.currentVideoInfo.bvid,
-        pageUrl: this.currentVideoInfo.url,
-        title: videoInfo.title,
-        owner: videoInfo.owner.name || videoInfo.owner,
-        duration: videoInfo.duration,
-        view: videoInfo.view,
-        pages: videoInfo.pages.length
+        pageUrl: window.location.href,
+        title: this.getVideoTitle(),
+        owner: this.getVideoOwner()
       };
 
-      console.log('📦 准备发送流式分析请求:', videoData);
-      updateDebug('step', 'videoData_prepared');
-      updateDebug('videoData', JSON.stringify(videoData));
+      console.log('✅ 视频信息已准备:', videoData);
 
       // 创建流式模态框
       this.currentModal = this.createStreamModal();
       document.body.appendChild(this.currentModal);
-      updateDebug('step', 'modal_created');
 
-      // 重置内容
+      // 初始化流式卡片渲染器
       this.fullContent = '';
+      this.streamRenderer = new StreamCardRenderer(this.currentModal);
 
       // 设置按钮加载状态
       this.setButtonLoading(true);
-      updateDebug('step', 'sending_message');
 
-      // 发送流式分析请求
-      console.log('🚀 发送消息到后台...');
-      updateDebug('step', 'sending_message');
-      try {
-        chrome.runtime.sendMessage({
-          action: 'START_STREAM_ANALYSIS',
-          data: {
-            videoData: videoData,
-            analysisType: 'general'
-          }
-        }, (response) => {
-          console.log('📨 收到后台响应:', response);
-          updateDebug('response_received', JSON.stringify(response));
-
-          if (chrome.runtime.lastError) {
-            console.error('❌ Chrome runtime error:', chrome.runtime.lastError);
-            updateDebug('error', 'chrome_runtime_error: ' + chrome.runtime.lastError.message);
-            this.onStreamError(chrome.runtime.lastError.message || '通信错误');
-            this.setButtonLoading(false);
-            return;
-          }
-          if (!response) {
-            console.error('❌ 后台无响应');
-            updateDebug('error', 'no_response_from_background');
-            this.onStreamError('后台服务无响应，请检查扩展是否正常运行');
-            this.setButtonLoading(false);
-            return;
-          }
-          if (!response.success) {
-            console.error('❌ 后台返回错误:', response.error);
-            updateDebug('error', 'background_error: ' + response.error);
-            this.onStreamError(response.error || '启动分析失败');
-            this.setButtonLoading(false);
-            return;
-          }
-          console.log('✅ 后台消息处理成功');
-          updateDebug('step', 'response_success');
-        });
-      } catch (sendError) {
-        console.error('❌ 发送消息失败:', sendError);
-        updateDebug('error', 'send_error: ' + sendError.message);
-        this.onStreamError(sendError.message || '发送消息失败');
-        this.setButtonLoading(false);
-      }
+      // 立即发送请求（无需等待B站API）
+      chrome.runtime.sendMessage({
+        action: 'START_STREAM_ANALYSIS',
+        data: {
+          videoData: videoData,
+          analysisType: 'summary'
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          this.onStreamError(chrome.runtime.lastError.message || '通信错误');
+          this.setButtonLoading(false);
+          return;
+        }
+        if (!response) {
+          this.onStreamError('后台服务无响应，请检查扩展是否正常运行');
+          this.setButtonLoading(false);
+          return;
+        }
+        if (!response.success) {
+          this.onStreamError(response.error || '启动分析失败');
+          this.setButtonLoading(false);
+          return;
+        }
+      });
 
     } catch (error) {
       console.error('❌ 摘要生成失败:', error);
-      console.error('❌ 错误堆栈:', error.stack);
       this.showError('摘要生成失败', error.message);
     }
+  }
+
+  getVideoTitle() {
+    const selectors = [
+      'h1.video-title',
+      '.video-title h1',
+      '[data-title]',
+      'h1'
+    ];
+
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        return element.textContent.trim();
+      }
+    }
+
+    return document.title.replace('_哔哩哔哩_bilibili', '').trim();
+  }
+
+  getVideoOwner() {
+    const selectors = [
+      '.user-name',
+      '.username',
+      '.up-name',
+      '[data-name]'
+    ];
+
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        return element.textContent.trim();
+      }
+    }
+
+    return '未知作者';
   }
 
   showLoadingState() {
@@ -819,6 +779,57 @@ class BilibiliContentScript {
       .stream-modal .summary-card[data-type="conclusion"] { border-left-color: #8b5cf6; }
       .stream-modal .summary-card[data-type="suggestion"] { border-left-color: #06b6d4; }
       .stream-modal .summary-card[data-type="audience"] { border-left-color: #ec4899; }
+      .stream-modal .summary-card[data-type="details"] { border-left-color: #f97316; }
+
+      /* 流式状态样式 */
+      .stream-modal .summary-card.streaming {
+        position: relative;
+      }
+
+      .stream-modal .summary-card.streaming .card-header::after {
+        content: '';
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        width: 8px;
+        height: 8px;
+        background: #667eea;
+        border-radius: 50%;
+        animation: streamingPulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes streamingPulse {
+        0%, 100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(0.8);
+        }
+      }
+
+      .stream-modal .summary-card.complete .card-header::after {
+        content: '✓';
+        position: absolute;
+        top: 14px;
+        right: 16px;
+        font-size: 14px;
+        font-weight: bold;
+        color: white;
+        animation: checkmarkAppear 0.3s ease;
+      }
+
+      @keyframes checkmarkAppear {
+        from {
+          opacity: 0;
+          transform: scale(0);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
 
       .stream-modal .card-paragraph {
         margin: 8px 0;
@@ -1054,48 +1065,27 @@ class BilibiliContentScript {
   }
 
   appendStreamContent(text) {
-    if (!this.currentModal) return;
-
-    const contentEl = this.currentModal.querySelector('#streamContent');
+    if (!this.currentModal || !this.streamRenderer) return;
 
     // 移除加载动画
-    const loadingEl = contentEl.querySelector('.loading-indicator');
+    const modalBody = this.currentModal.querySelector('.modal-body');
+    const loadingEl = modalBody?.querySelector('.loading-indicator');
     if (loadingEl) {
       loadingEl.remove();
     }
 
-    // 检查是否是第一次添加内容
-    const isFirstContent = contentEl.children.length === 0;
-
-    // 如果是第一次添加内容，创建流式文本容器
-    if (isFirstContent) {
-      contentEl.innerHTML = '';
-      const streamingContent = document.createElement('div');
-      streamingContent.className = 'streaming-text';
-      streamingContent.style.cssText = `
-        padding: 16px;
-        background: white;
-        border-radius: 8px;
-        line-height: 1.6;
-        color: #374151;
-        white-space: pre-wrap;
-        font-size: 14px;
-      `;
-      contentEl.appendChild(streamingContent);
-    }
-
-    const streamingEl = contentEl.querySelector('.streaming-text');
-
-    // 追加文本内容
-    streamingEl.textContent += text;
+    // 使用流式卡片渲染器处理内容
+    this.streamRenderer.append(text);
 
     // 保存完整内容
     this.fullContent += text;
 
-    // 自动滚动到底部（检测用户是否在滚动）
-    const isNearBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 50;
-    if (isNearBottom) {
-      contentEl.scrollTop = contentEl.scrollHeight;
+    // 自动滚动到最新卡片
+    if (this.streamRenderer.currentCard) {
+      this.streamRenderer.currentCard.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
     }
   }
 
@@ -1156,6 +1146,11 @@ class BilibiliContentScript {
   onStreamComplete(fullContent) {
     if (!this.currentModal) return;
 
+    // 刷新流式渲染器的缓冲区，完成所有卡片
+    if (this.streamRenderer) {
+      this.streamRenderer.flush();
+    }
+
     // 移除加载动画（从modal-body查找）
     const modalBody = this.currentModal.querySelector('.modal-body');
     if (modalBody) {
@@ -1164,9 +1159,6 @@ class BilibiliContentScript {
         loadingEl.remove();
       }
     }
-
-    // 渲染卡片式内容
-    this.renderAsCards(fullContent);
 
     // 重置按钮状态
     this.setButtonLoading(false);
@@ -1193,106 +1185,6 @@ class BilibiliContentScript {
 
     // 保存到历史记录
     this.saveToHistory(fullContent);
-  }
-
-  renderAsCards(fullContent) {
-    const container = this.currentModal.querySelector('#streamContent');
-    if (!container) return;
-
-    // 清空流式文本容器
-    container.innerHTML = '';
-
-    // 按空行分割章节
-    const sections = fullContent.split(/\n\n+/);
-
-    // 添加淡入动画
-    container.style.opacity = '0';
-
-    sections.forEach((section, index) => {
-      const trimmed = section.trim();
-      if (!trimmed) return;
-
-      const lines = trimmed.split('\n');
-      const title = lines[0].trim();
-      const content = lines.slice(1).join('\n').trim();
-
-      const card = this.createCard(title, content);
-      // 为每个卡片添加延迟动画
-      card.style.animationDelay = `${index * 0.1}s`;
-      container.appendChild(card);
-    });
-
-    // 触发重排后显示
-    requestAnimationFrame(() => {
-      container.style.transition = 'opacity 0.3s ease';
-      container.style.opacity = '1';
-    });
-  }
-
-  createCard(title, content) {
-    const card = document.createElement('div');
-    card.className = 'summary-card';
-
-    const icon = this.getIconForTitle(title);
-    const cardType = this.getCardType(title);
-    card.setAttribute('data-type', cardType);
-
-    const formattedContent = this.formatCardContent(content);
-
-    card.innerHTML = `
-      <div class="card-header">
-        <span class="card-icon">${icon}</span>
-        <h4 class="card-title">${this.escapeHtml(title)}</h4>
-      </div>
-      <div class="card-body">${formattedContent}</div>
-    `;
-
-    return card;
-  }
-
-  getIconForTitle(title) {
-    const t = title.toLowerCase();
-    if (t.includes('主题') || t.includes('核心') || t.includes('概览') || t.includes('主题和')) return '🎯';
-    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return '📋';
-    if (t.includes('要点') || t.includes('关键') || t.includes('重点') || t.includes('信息')) return '⭐';
-    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return '✅';
-    if (t.includes('建议') || t.includes('推荐')) return '💡';
-    if (t.includes('受众') || t.includes('适合') || t.includes('对象')) return '👥';
-    if (t.includes('结构') || t.includes('逻辑')) return '🔗';
-    if (t.includes('价值') || t.includes('意义')) return '💎';
-    return '📌';
-  }
-
-  getCardType(title) {
-    const t = title.toLowerCase();
-    if (t.includes('主题') || t.includes('核心') || t.includes('概览')) return 'theme';
-    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return 'content';
-    if (t.includes('要点') || t.includes('关键') || t.includes('重点')) return 'points';
-    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return 'conclusion';
-    if (t.includes('建议') || t.includes('推荐')) return 'suggestion';
-    if (t.includes('受众') || t.includes('适合')) return 'audience';
-    return 'default';
-  }
-
-  formatCardContent(content) {
-    if (!content) return '';
-
-    const lines = content.split('\n');
-
-    const html = lines.map(line => {
-      const trimmed = line.trim();
-      if (!trimmed) return '';
-
-      // 列表项
-      if (/^[\d\-\*\•]\s/.test(trimmed) || /^[\u4e00-\u9fa5][、\.]\s/.test(trimmed)) {
-        return `<li class="card-list-item">${this.escapeHtml(trimmed)}</li>`;
-      }
-
-      // 普通段落
-      return `<p class="card-paragraph">${this.escapeHtml(trimmed)}</p>`;
-    }).filter(Boolean).join('\n');
-
-    return html;
   }
 
   onStreamError(error) {
@@ -1436,6 +1328,159 @@ class BilibiliContentScript {
       debugEl.setAttribute(`data-${key}`, value);
       console.log(`[DEBUG] ${key}: ${value}`);
     }
+  }
+}
+
+// 流式卡片渲染器
+class StreamCardRenderer {
+  constructor(modal) {
+    this.modal = modal;
+    this.container = modal.querySelector('#streamContent');
+    this.buffer = '';
+    this.currentCard = null;
+    this.currentTitle = null;
+    this.currentContent = '';
+    this.cardCount = 0;
+  }
+
+  append(text) {
+    this.buffer += text;
+    this.processBuffer();
+  }
+
+  processBuffer() {
+    // 按双换行分割段落
+    while (this.buffer.includes('\n\n')) {
+      const parts = this.buffer.split('\n\n');
+      const section = parts[0];
+      this.buffer = parts.slice(1).join('\n\n');
+
+      this.createOrUpdateCard(section);
+    }
+  }
+
+  createOrUpdateCard(section) {
+    const trimmed = section.trim();
+    if (!trimmed) return;
+
+    const lines = trimmed.split('\n');
+    const title = lines[0].trim();
+    const content = lines.slice(1).join('\n').trim();
+
+    // 新标题 = 新卡片
+    if (title !== this.currentTitle) {
+      // 完成之前的卡片
+      this.finalizeCurrentCard();
+
+      // 创建新卡片
+      this.currentTitle = title;
+      this.currentContent = content;
+      this.currentCard = this.createNewCard(title);
+      this.container.appendChild(this.currentCard);
+      this.cardCount++;
+    } else {
+      // 同一卡片，追加内容
+      if (content) {
+        this.currentContent += '\n' + content;
+        this.updateCardContent();
+      }
+    }
+  }
+
+  createNewCard(title) {
+    const card = document.createElement('div');
+    card.className = 'summary-card streaming';
+    card.setAttribute('data-type', this.getCardType(title));
+
+    const icon = this.getIconForTitle(title);
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-icon">${icon}</span>
+        <h4 class="card-title">${this.escapeHtml(title)}</h4>
+      </div>
+      <div class="card-body">
+        <div class="card-streaming-content"></div>
+      </div>
+    `;
+
+    return card;
+  }
+
+  updateCardContent() {
+    if (!this.currentCard) return;
+
+    const body = this.currentCard.querySelector('.card-body');
+    if (body) {
+      body.innerHTML = this.formatText(this.currentContent);
+    }
+  }
+
+  finalizeCurrentCard() {
+    if (this.currentCard) {
+      this.currentCard.classList.remove('streaming');
+      this.currentCard.classList.add('complete');
+    }
+  }
+
+  flush() {
+    // 处理缓冲区剩余内容
+    if (this.buffer.trim()) {
+      this.createOrUpdateCard(this.buffer);
+      this.finalizeCurrentCard();
+      this.buffer = '';
+    }
+  }
+
+  getCardType(title) {
+    const t = title.toLowerCase();
+    if (t.includes('主题') || t.includes('核心') || t.includes('概览')) return 'theme';
+    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return 'content';
+    if (t.includes('观点') || t.includes('要点') || t.includes('关键')) return 'points';
+    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return 'conclusion';
+    if (t.includes('建议') || t.includes('推荐')) return 'suggestion';
+    if (t.includes('受众') || t.includes('适合')) return 'audience';
+    if (t.includes('细节') || t.includes('说明')) return 'details';
+    return 'default';
+  }
+
+  getIconForTitle(title) {
+    const t = title.toLowerCase();
+    if (t.includes('主题') || t.includes('核心') || t.includes('概览')) return '🎯';
+    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return '📋';
+    if (t.includes('观点') || t.includes('要点') || t.includes('关键') || t.includes('信息')) return '⭐';
+    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return '✅';
+    if (t.includes('建议') || t.includes('推荐')) return '💡';
+    if (t.includes('受众') || t.includes('适合') || t.includes('对象')) return '👥';
+    if (t.includes('细节') || t.includes('说明')) return '📌';
+    return '📌';
+  }
+
+  formatText(text) {
+    if (!text) return '';
+
+    const lines = text.split('\n');
+
+    const html = lines.map(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+
+      // 列表项
+      if (/^[\d\-\*\•]\s/.test(trimmed) || /^[\u4e00-\u9fa5][、\.]\s/.test(trimmed)) {
+        return `<li class="card-list-item">${this.escapeHtml(trimmed)}</li>`;
+      }
+
+      // 普通段落
+      return `<p class="card-paragraph">${this.escapeHtml(trimmed)}</p>`;
+    }).filter(Boolean).join('\n');
+
+    return html;
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 }
 
