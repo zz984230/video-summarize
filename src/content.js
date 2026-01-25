@@ -1088,7 +1088,15 @@ class BilibiliContentScript {
   }
 
   appendStreamContent(text) {
-    if (!this.currentModal || !this.streamRenderer) return;
+    if (!this.currentModal || !this.streamRenderer) {
+      console.error('[appendStreamContent] No modal or renderer', {
+        hasModal: !!this.currentModal,
+        hasRenderer: !!this.streamRenderer
+      });
+      return;
+    }
+
+    console.log('[appendStreamContent] Received text:', text.substring(0, 100));
 
     // 移除加载动画
     const modalBody = this.currentModal.querySelector('.modal-body');
@@ -1368,6 +1376,7 @@ class StreamCardRenderer {
   }
 
   append(text) {
+    console.log('[StreamCardRenderer] append:', text.substring(0, 100));
     this.buffer += text;
     this.processBuffer();
   }
@@ -1379,6 +1388,7 @@ class StreamCardRenderer {
       const section = parts[0];
       this.buffer = parts.slice(1).join('\n\n');
 
+      console.log('[StreamCardRenderer] processing section:', section.substring(0, 100));
       this.createOrUpdateCard(section);
     }
   }
@@ -1391,6 +1401,8 @@ class StreamCardRenderer {
     const title = lines[0].trim();
     const content = lines.slice(1).join('\n').trim();
 
+    console.log('[StreamCardRenderer] title:', title, 'content:', content.substring(0, 50));
+
     // 新标题 = 新卡片
     if (title !== this.currentTitle) {
       // 完成之前的卡片
@@ -1402,6 +1414,11 @@ class StreamCardRenderer {
       this.currentCard = this.createNewCard(title);
       this.container.appendChild(this.currentCard);
       this.cardCount++;
+
+      // 立即更新内容（如果有）
+      if (content) {
+        this.updateCardContent();
+      }
     } else {
       // 同一卡片，追加内容
       if (content) {
