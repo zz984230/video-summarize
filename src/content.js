@@ -10,6 +10,7 @@ class BilibiliContentScript {
     this.currentModal = null;
     this.fullContent = '';
     this.init();
+    this.setupStreamListener();
 
     // 页面卸载时清理
     window.addEventListener('beforeunload', () => {
@@ -988,6 +989,23 @@ class BilibiliContentScript {
     } catch (error) {
       console.error('❌ 后台通知失败:', error);
     }
+  }
+
+  setupStreamListener() {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      switch (message.action) {
+        case 'STREAM_CHUNK':
+          this.appendStreamContent(message.data.content || '');
+          break;
+        case 'STREAM_END':
+          this.onStreamComplete(message.data.content);
+          break;
+        case 'STREAM_ERROR':
+          this.onStreamError(message.data.error);
+          break;
+      }
+      return true;
+    });
   }
 }
 
