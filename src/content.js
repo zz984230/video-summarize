@@ -759,6 +759,90 @@ class BilibiliContentScript {
         font-size: 15px;
       }
 
+      /* 卡片式布局样式 */
+      .stream-modal .summary-card {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 12px;
+        padding: 0;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid #667eea;
+        overflow: hidden;
+        animation: cardSlideIn 0.3s ease;
+      }
+
+      @keyframes cardSlideIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .stream-modal .summary-card:hover {
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        transform: translateY(-2px);
+        transition: all 0.2s ease;
+      }
+
+      .stream-modal .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .stream-modal .card-icon {
+        font-size: 20px;
+        flex-shrink: 0;
+      }
+
+      .stream-modal .card-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .stream-modal .card-body {
+        padding: 16px 20px;
+      }
+
+      /* 不同章节类型使用不同边框色 */
+      .stream-modal .summary-card[data-type="theme"] { border-left-color: #667eea; }
+      .stream-modal .summary-card[data-type="content"] { border-left-color: #10b981; }
+      .stream-modal .summary-card[data-type="points"] { border-left-color: #f59e0b; }
+      .stream-modal .summary-card[data-type="conclusion"] { border-left-color: #8b5cf6; }
+      .stream-modal .summary-card[data-type="suggestion"] { border-left-color: #06b6d4; }
+      .stream-modal .summary-card[data-type="audience"] { border-left-color: #ec4899; }
+
+      .stream-modal .card-paragraph {
+        margin: 8px 0;
+        line-height: 1.6;
+        color: #495057;
+      }
+
+      .stream-modal .card-list-item {
+        padding: 6px 0;
+        padding-left: 24px;
+        position: relative;
+        color: #495057;
+        line-height: 1.5;
+      }
+
+      .stream-modal .card-list-item::before {
+        content: '•';
+        position: absolute;
+        left: 8px;
+        color: #667eea;
+        font-weight: bold;
+      }
+
+      /* 保留旧样式以兼容流式内容 */
       .stream-modal .formatted-content {
         animation: fadeIn 0.3s ease;
       }
@@ -983,18 +1067,27 @@ class BilibiliContentScript {
     // 检查是否是第一次添加内容
     const isFirstContent = contentEl.children.length === 0;
 
-    // 如果是第一次添加内容，创建格式化的内容容器
+    // 如果是第一次添加内容，创建流式文本容器
     if (isFirstContent) {
       contentEl.innerHTML = '';
-      const formattedContent = document.createElement('div');
-      formattedContent.className = 'formatted-content';
-      contentEl.appendChild(formattedContent);
+      const streamingContent = document.createElement('div');
+      streamingContent.className = 'streaming-text';
+      streamingContent.style.cssText = `
+        padding: 16px;
+        background: white;
+        border-radius: 8px;
+        line-height: 1.6;
+        color: #374151;
+        white-space: pre-wrap;
+        font-size: 14px;
+      `;
+      contentEl.appendChild(streamingContent);
     }
 
-    const formattedEl = contentEl.querySelector('.formatted-content');
+    const streamingEl = contentEl.querySelector('.streaming-text');
 
-    // 追加内容（带简单格式化）
-    this.appendFormattedText(formattedEl, text);
+    // 追加文本内容
+    streamingEl.textContent += text;
 
     // 保存完整内容
     this.fullContent += text;
@@ -1063,14 +1156,17 @@ class BilibiliContentScript {
   onStreamComplete(fullContent) {
     if (!this.currentModal) return;
 
-    // 移除加载动画
-    const contentEl = this.currentModal.querySelector('#streamContent');
-    if (contentEl) {
-      const loadingEl = contentEl.querySelector('.loading-indicator');
+    // 移除加载动画（从modal-body查找）
+    const modalBody = this.currentModal.querySelector('.modal-body');
+    if (modalBody) {
+      const loadingEl = modalBody.querySelector('.loading-indicator');
       if (loadingEl) {
         loadingEl.remove();
       }
     }
+
+    // 渲染卡片式内容
+    this.renderAsCards(fullContent);
 
     // 重置按钮状态
     this.setButtonLoading(false);
@@ -1097,6 +1193,106 @@ class BilibiliContentScript {
 
     // 保存到历史记录
     this.saveToHistory(fullContent);
+  }
+
+  renderAsCards(fullContent) {
+    const container = this.currentModal.querySelector('#streamContent');
+    if (!container) return;
+
+    // 清空流式文本容器
+    container.innerHTML = '';
+
+    // 按空行分割章节
+    const sections = fullContent.split(/\n\n+/);
+
+    // 添加淡入动画
+    container.style.opacity = '0';
+
+    sections.forEach((section, index) => {
+      const trimmed = section.trim();
+      if (!trimmed) return;
+
+      const lines = trimmed.split('\n');
+      const title = lines[0].trim();
+      const content = lines.slice(1).join('\n').trim();
+
+      const card = this.createCard(title, content);
+      // 为每个卡片添加延迟动画
+      card.style.animationDelay = `${index * 0.1}s`;
+      container.appendChild(card);
+    });
+
+    // 触发重排后显示
+    requestAnimationFrame(() => {
+      container.style.transition = 'opacity 0.3s ease';
+      container.style.opacity = '1';
+    });
+  }
+
+  createCard(title, content) {
+    const card = document.createElement('div');
+    card.className = 'summary-card';
+
+    const icon = this.getIconForTitle(title);
+    const cardType = this.getCardType(title);
+    card.setAttribute('data-type', cardType);
+
+    const formattedContent = this.formatCardContent(content);
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-icon">${icon}</span>
+        <h4 class="card-title">${this.escapeHtml(title)}</h4>
+      </div>
+      <div class="card-body">${formattedContent}</div>
+    `;
+
+    return card;
+  }
+
+  getIconForTitle(title) {
+    const t = title.toLowerCase();
+    if (t.includes('主题') || t.includes('核心') || t.includes('概览') || t.includes('主题和')) return '🎯';
+    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return '📋';
+    if (t.includes('要点') || t.includes('关键') || t.includes('重点') || t.includes('信息')) return '⭐';
+    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return '✅';
+    if (t.includes('建议') || t.includes('推荐')) return '💡';
+    if (t.includes('受众') || t.includes('适合') || t.includes('对象')) return '👥';
+    if (t.includes('结构') || t.includes('逻辑')) return '🔗';
+    if (t.includes('价值') || t.includes('意义')) return '💎';
+    return '📌';
+  }
+
+  getCardType(title) {
+    const t = title.toLowerCase();
+    if (t.includes('主题') || t.includes('核心') || t.includes('概览')) return 'theme';
+    if (t.includes('内容') || t.includes('分析') || t.includes('详情')) return 'content';
+    if (t.includes('要点') || t.includes('关键') || t.includes('重点')) return 'points';
+    if (t.includes('结论') || t.includes('总结') || t.includes('评价')) return 'conclusion';
+    if (t.includes('建议') || t.includes('推荐')) return 'suggestion';
+    if (t.includes('受众') || t.includes('适合')) return 'audience';
+    return 'default';
+  }
+
+  formatCardContent(content) {
+    if (!content) return '';
+
+    const lines = content.split('\n');
+
+    const html = lines.map(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+
+      // 列表项
+      if (/^[\d\-\*\•]\s/.test(trimmed) || /^[\u4e00-\u9fa5][、\.]\s/.test(trimmed)) {
+        return `<li class="card-list-item">${this.escapeHtml(trimmed)}</li>`;
+      }
+
+      // 普通段落
+      return `<p class="card-paragraph">${this.escapeHtml(trimmed)}</p>`;
+    }).filter(Boolean).join('\n');
+
+    return html;
   }
 
   onStreamError(error) {
