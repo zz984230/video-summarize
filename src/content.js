@@ -1111,13 +1111,21 @@ class BilibiliContentScript {
     // 保存完整内容
     this.fullContent += text;
 
-    // 自动滚动到最新卡片
-    if (this.streamRenderer.currentCard) {
-      this.streamRenderer.currentCard.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      });
-    }
+    // 改进的自动滚动 - 滚动到模态框底部
+    this.autoScrollToContent();
+  }
+
+  autoScrollToContent() {
+    if (!this.currentModal) return;
+
+    const modalBody = this.currentModal.querySelector('.modal-body');
+    if (!modalBody) return;
+
+    // 平滑滚动到模态框内容区域的底部
+    modalBody.scrollTo({
+      top: modalBody.scrollHeight,
+      behavior: 'smooth'
+    });
   }
 
   appendFormattedText(container, text) {
@@ -1506,14 +1514,19 @@ class StreamCardRenderer {
       const trimmed = line.trim();
       if (!trimmed) return '';
 
-      // 列表项
-      if (/^[\d\-\*\•]\s/.test(trimmed) || /^[\u4e00-\u9fa5][、\.]\s/.test(trimmed)) {
-        return `<li class="card-list-item">${this.escapeHtml(trimmed)}</li>`;
+      // 列表项 - 扩展正则表达式以匹配更多格式
+      // 匹配: "1. ", "1、", "- ", "* ", "• ", "①", "⑴" 等
+      if (/^[\d\-\*\•\①②③④⑤⑥⑦⑧⑨⑩]\s/.test(trimmed) ||
+          /^[\u4e00-\u9fa5\u3000-\u303f][\u4e00-\u9fa5\d\.、]\s/.test(trimmed)) {
+        // 移除列表标记前缀，只保留内容
+        const content = trimmed.replace(/^[\d\-\*\•\①②③④⑤⑥⑦⑧⑨⑩]\s+/, '')
+                           .replace(/^[\u4e00-\u9fa5\u3000-\u303f][\u4e00-\u9fa5\d\.、]\s+/, '');
+        return `<li class="card-list-item">${this.escapeHtml(content.trim())}</li>`;
       }
 
       // 普通段落
       return `<p class="card-paragraph">${this.escapeHtml(trimmed)}</p>`;
-    }).filter(Boolean).join('\n');
+    }).filter(Boolean).join('');
 
     return html;
   }
