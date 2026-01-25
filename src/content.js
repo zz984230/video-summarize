@@ -1301,19 +1301,20 @@ class BilibiliContentScript {
   }
 
   setupStreamListener() {
+    const self = this;
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       switch (message.action) {
         case 'STREAM_CHUNK':
-          this.appendStreamContent(message.data.content || '');
+          self.appendStreamContent(message.data.content || '');
           break;
         case 'STREAM_END':
-          this.onStreamComplete(message.data.content);
+          self.onStreamComplete(message.data.content);
           break;
         case 'STREAM_ERROR':
-          this.onStreamError(message.data.error);
+          self.onStreamError(message.data.error);
           break;
         case 'DEBUG_MESSAGE':
-          this.handleDebugMessage(message.data.message);
+          self.handleDebugMessage(message.data.message);
           break;
       }
       return true;
