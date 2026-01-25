@@ -1380,6 +1380,7 @@ class StreamCardRenderer {
     this.currentTitle = null;
     this.currentContent = '';
     this.cardCount = 0;
+    this.inCardContent = false; // 标记是否正在处理卡片内容
   }
 
   append(text) {
@@ -1387,9 +1388,10 @@ class StreamCardRenderer {
     this.buffer += text;
     this.processBuffer();
 
-    // 如果缓冲区没有双换行了，但有内容，直接更新当前卡片
+    // 如果缓冲区没有双换行了，但有内容且有当前卡片，直接更新当前卡片内容
     if (!this.buffer.includes('\n\n') && this.buffer.trim() && this.currentCard) {
-      console.log('[StreamCardRenderer] no double newline, updating current card');
+      console.log('[StreamCardRenderer] no double newline, updating current card content');
+      // 将缓冲区内容追加到当前卡片内容
       this.currentContent = this.buffer.trim();
       this.updateCardContent();
     }
@@ -1415,27 +1417,54 @@ class StreamCardRenderer {
     const title = lines[0].trim();
     const content = lines.slice(1).join('\n').trim();
 
-    console.log('[StreamCardRenderer] title:', title, 'content length:', content.length, 'content preview:', content.substring(0, 50));
+    console.log('[StreamCardRenderer] analyzing section - title:', title, 'content length:', content.length, 'inCardContent:', this.inCardContent);
 
-    // 新标题 = 新卡片
-    if (title !== this.currentTitle) {
-      // 完成之前的卡片
+    // 检查是否是新的章节标题（单独一行，后面没有内容，或者是已知的标题格式）
+    const isLikelyNewTitle = !content ||
+                             title.includes('主题') ||
+                             title.includes('观点') ||
+                             title.includes('细节') ||
+                             title.includes('结论') ||
+                             title.includes('总结');
+
+    if (isLikelyNewTitle && title !== this.currentTitle) {
+      // 这是一个新的章节标题，创建新卡片
+      console.log('[StreamCardRenderer] NEW SECTION - creating card for:', title);
       this.finalizeCurrentCard();
 
-      // 创建新卡片
       this.currentTitle = title;
       this.currentContent = content;
       this.currentCard = this.createNewCard(title);
       this.container.appendChild(this.currentCard);
       this.cardCount++;
+      this.inCardContent = true; // 现在进入内容模式
+
+      // 如果这个section已经包含了内容，立即更新
+      if (content) {
+        this.updateCardContent();
+      }
 
       console.log('[StreamCardRenderer] created new card:', title, 'total cards:', this.cardCount);
     } else {
-      // 同一卡片，更新内容
-      console.log('[StreamCardRenderer] updating existing card:', title);
-      this.currentContent = content;
+      // 这是当前卡片的内容追加
+      console.log('[StreamCardRenderer] APPENDING CONTENT to:', this.currentTitle);
+
+      // 如果有内容，追加到当前内容
+      if (content) {
+        // 如果之前有内容，需要用换行连接
+        const separator = this.currentContent ? '\n' : '';
+        this.currentContent += separator + content;
+      }
+
+      // 如果只有标题（看起来像内容），也追加
+      if (!content && title && this.inCardContent && this.currentTitle) {
+        // 这是内容的一行，不是标题
+        const separator = this.currentContent ? '\n' : '';
+        this.currentContent += separator + title;
+      }
+
       this.updateCardContent();
-      console.log('[StreamCardRenderer] content updated, calling updateCardContent');
+      console.log('[StreamCardRenderer] content updated, total length:', this.currentContent.length);
     }
   }
 
