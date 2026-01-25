@@ -199,17 +199,178 @@ class BackgroundService {
   }
 
   async streamVideoAnalysis(videoData, analysisType, config) {
-    // TODO: Task 8 will implement the actual streaming logic
-    // This function will:
-    // 1. Build the prompt
-    // 2. Call Zhipu API with stream: true
-    // 3. Parse SSE responses
-    // 4. Send chunks to content script
     console.log('🎬 [Background] Starting stream analysis:', videoData.bvid);
-    console.log('📊 [Background] Analysis type:', analysisType);
-    console.log('⚙️ [Background] Config:', {
-      apiUrl: config.apiUrl,
-      modelId: config.modelId
+
+    try {
+      // 获取视频URL
+      const videoInfo = await this.parser.getVideoInfo(videoData.bvid);
+      const videoUrls = await this.parser.getVideoUrls(videoInfo.aid, videoInfo.cid, 64);
+
+      if (!videoUrls || videoUrls.length === 0) {
+        throw new Error('无法获取视频URL');
+      }
+
+      const videoUrl = videoUrls[0].url;
+
+      // 构建提示词
+      const prompt = this.buildAnalysisPrompt(videoData, analysisType);
+
+      // 构建API请求
+      const requestBody = {
+        model: config.modelId,
+        stream: true,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'video_url', video_url: videoUrl },
+            { type: 'text', text: prompt }
+          ]
+        }],
+        max_tokens: 1000,
+        temperature: 0.7
+      };
+
+      // 发送流式请求
+      const response = await fetch(`${config.apiUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API请求失败: ${response.status} ${errorText}`);
+      }
+
+      // 解析SSE流
+      await this.parseSSEStream(response, videoData.bvid);
+
+    } catch (error) {
+      console.error('❌ [Background] Stream analysis error:', error);
+      this.sendStreamError(videoData.bvid, error.message);
+      throw error;
+    }
+  }
+
+  buildAnalysisPrompt(videoData, analysisType) {
+    const baseInfo = {
+      title: videoData.title,
+      owner: videoData.owner,
+      duration: videoData.duration,
+      view: videoData.view
+    };
+
+    const prompts = {
+      general: `请详细分析这个视频的内容，包括：
+1. 视频主题和核心内容
+2. 主要观点和关键信息
+3. 值得注意的细节
+4. 总结和评价
+
+视频信息：
+- 标题：${baseInfo.title}
+- UP主：${baseInfo.owner}
+- 时长：${baseInfo.duration}
+- 播放量：${baseInfo.view}`,
+
+      summary: `请为这个视频生成简洁的摘要（200字以内）。
+
+视频信息：
+- 标题：${baseInfo.title}
+- UP主：${baseInfo.owner}`,
+
+      technical: `请从技术角度分析这个视频。
+
+视频信息：
+- 标题：${baseInfo.title}
+- UP主：${baseInfo.owner}`
+    };
+
+    return prompts[analysisType] || prompts.general;
+  }
+
+  async parseSSEStream(response, bvid) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          console.log('✅ [Background] Stream completed');
+          this.sendStreamEnd(bvid, fullContent);
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+
+            if (data === '[DONE]') {
+              console.log('✅ [Background] Stream completed with [DONE]');
+              this.sendStreamEnd(bvid, fullContent);
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+
+              if (content) {
+                fullContent += content;
+                this.sendStreamChunk(bvid, content);
+              }
+            } catch (e) {
+              console.warn('⚠️ [Background] Failed to parse SSE data:', data, e);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  sendStreamChunk(bvid, content) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'STREAM_CHUNK',
+          data: { content }
+        });
+      }
+    });
+  }
+
+  sendStreamEnd(bvid, fullContent) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'STREAM_END',
+          data: { content: fullContent }
+        });
+      }
+    });
+  }
+
+  sendStreamError(bvid, error) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'STREAM_ERROR',
+          data: { error }
+        });
+      }
     });
   }
 
