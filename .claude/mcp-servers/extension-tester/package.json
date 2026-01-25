@@ -1,0 +1,17 @@
+{
+  "name": "extension-tester-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for testing Chrome extensions with Playwright",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["mcp", "chrome-extension", "testing", "playwright"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "playwright": "^1.49.1"
+  }
+}
