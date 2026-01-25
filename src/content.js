@@ -860,20 +860,17 @@ class BilibiliContentScript {
         color: #495057;
       }
 
-      .stream-modal .card-list-item {
+      .stream-modal .card-paragraph.card-list-item {
         padding: 6px 0;
-        padding-left: 24px;
+        padding-left: 0;
         position: relative;
         color: #495057;
         line-height: 1.5;
       }
 
-      .stream-modal .card-list-item::before {
-        content: '•';
-        position: absolute;
-        left: 8px;
-        color: #667eea;
-        font-weight: bold;
+      /* 移除列表项的圆点样式，保持与其他段落一致 */
+      .stream-modal .card-paragraph.card-list-item::before {
+        display: none;
       }
 
       /* 保留旧样式以兼容流式内容 */
@@ -1096,7 +1093,7 @@ class BilibiliContentScript {
       return;
     }
 
-    console.log('[appendStreamContent] Received text:', text.substring(0, 100));
+    console.log('[appendStreamContent] Received text:', text.substring(0, 100), 'length:', text.length);
 
     // 移除加载动画
     const modalBody = this.currentModal.querySelector('.modal-body');
@@ -1110,6 +1107,8 @@ class BilibiliContentScript {
 
     // 保存完整内容
     this.fullContent += text;
+
+    console.log('[appendStreamContent] Total content length so far:', this.fullContent.length);
 
     // 改进的自动滚动 - 滚动到模态框底部
     this.autoScrollToContent();
@@ -1387,6 +1386,13 @@ class StreamCardRenderer {
     console.log('[StreamCardRenderer] append:', text.substring(0, 100));
     this.buffer += text;
     this.processBuffer();
+
+    // 如果缓冲区没有双换行了，但有内容，直接更新当前卡片
+    if (!this.buffer.includes('\n\n') && this.buffer.trim() && this.currentCard) {
+      console.log('[StreamCardRenderer] no double newline, updating current card');
+      this.currentContent = this.buffer.trim();
+      this.updateCardContent();
+    }
   }
 
   processBuffer() {
@@ -1409,7 +1415,7 @@ class StreamCardRenderer {
     const title = lines[0].trim();
     const content = lines.slice(1).join('\n').trim();
 
-    console.log('[StreamCardRenderer] title:', title, 'content:', content.substring(0, 50));
+    console.log('[StreamCardRenderer] title:', title, 'content length:', content.length, 'content preview:', content.substring(0, 50));
 
     // 新标题 = 新卡片
     if (title !== this.currentTitle) {
@@ -1422,12 +1428,14 @@ class StreamCardRenderer {
       this.currentCard = this.createNewCard(title);
       this.container.appendChild(this.currentCard);
       this.cardCount++;
-    }
 
-    // 无论标题是否相同，都更新内容（流式渲染）
-    if (content) {
+      console.log('[StreamCardRenderer] created new card:', title, 'total cards:', this.cardCount);
+    } else {
+      // 同一卡片，更新内容
+      console.log('[StreamCardRenderer] updating existing card:', title);
       this.currentContent = content;
       this.updateCardContent();
+      console.log('[StreamCardRenderer] content updated, calling updateCardContent');
     }
   }
 
@@ -1454,9 +1462,15 @@ class StreamCardRenderer {
   updateCardContent() {
     if (!this.currentCard) return;
 
+    console.log('[updateCardContent] Updating card:', this.currentTitle, 'content length:', this.currentContent.length);
+
     const body = this.currentCard.querySelector('.card-body');
     if (body) {
-      body.innerHTML = this.formatText(this.currentContent);
+      const html = this.formatText(this.currentContent);
+      console.log('[updateCardContent] Generated HTML length:', html.length, 'preview:', html.substring(0, 200));
+      body.innerHTML = html;
+    } else {
+      console.error('[updateCardContent] No card-body found!');
     }
   }
 
