@@ -264,7 +264,12 @@ class BackgroundService {
 
             try {
               const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content;
+              const delta = parsed.choices?.[0]?.delta;
+
+              // 优先使用 content，如果没有则使用 reasoning_content
+              // 注意：reasoning_content 是模型思考过程，理想情况应该被过滤
+              // 但智谱 API 在某些情况下只返回 reasoning_content
+              const content = delta?.content || delta?.reasoning_content;
 
               if (content) {
                 fullContent += content;
