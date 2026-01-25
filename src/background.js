@@ -1,11 +1,9 @@
 // 扩展后台服务工作线程
 import { BilibiliVideoParser } from './services/bilibili-parser.js';
-import { MultimodalAnalysisService } from './services/multimodal-analysis.js';
 
 class BackgroundService {
   constructor() {
     this.parser = new BilibiliVideoParser();
-    this.analysisService = new MultimodalAnalysisService();
     this.init();
   }
 
@@ -42,24 +40,18 @@ class BackgroundService {
       switch (request.action) {
         case 'PARSE_VIDEO':
           return await this.parseVideo(request.data, sendResponse);
-          
-        case 'ANALYZE_VIDEO':
-          return await this.analyzeVideo(request.data, sendResponse);
-          
+
         case 'VIDEO_DETECTED':
           console.log('📹 检测到视频页面:', request.data.videoInfo?.title || '未知标题');
           // 视频检测成功，可以在这里添加其他处理逻辑
           sendResponse({ success: true, message: '视频检测成功' });
           return;
-          
+
         case 'GET_STORAGE':
           return await this.getStorage(request.key, sendResponse);
-          
+
         case 'SET_STORAGE':
           return await this.setStorage(request.key, request.value, sendResponse);
-          
-        case 'TEST_API_KEY':
-          return await this.testApiKey(request.apiKey, sendResponse);
 
         case 'START_STREAM_ANALYSIS':
           return await this.handleStreamAnalysis(request.data, sendResponse);
@@ -77,44 +69,16 @@ class BackgroundService {
   async parseVideo(data, sendResponse) {
     try {
       console.log('🎬 开始解析视频:', data.url);
-      
+
       const result = await this.parser.parseVideo(data.url);
       console.log('✅ 视频解析成功:', result);
-      
+
       sendResponse({
         success: true,
         data: result
       });
     } catch (error) {
       console.error('❌ 视频解析失败:', error);
-      sendResponse({
-        success: false,
-        error: error.message
-      });
-    }
-  }
-
-  async analyzeVideo(data, sendResponse) {
-    try {
-      console.log('🤖 开始分析视频:', data.videoData.title);
-      
-      // 获取API密钥
-      const apiKey = await this.getApiKey();
-      if (!apiKey) {
-        throw new Error('请先在设置页面配置API密钥');
-      }
-
-      this.analysisService.init(apiKey);
-      const result = await this.analysisService.analyzeVideo(
-        data.videoData,
-        data.analysisType || 'general'
-      );
-
-      console.log('✅ 视频分析成功:', result.success ? '成功' : '失败');
-      
-      sendResponse(result);
-    } catch (error) {
-      console.error('❌ 视频分析失败:', error);
       sendResponse({
         success: false,
         error: error.message
@@ -136,30 +100,6 @@ class BackgroundService {
         resolve(true);
       });
     });
-  }
-
-  async getApiKey() {
-    return await this.getStorage('apiKey');
-  }
-
-  async testApiKey(apiKey, sendResponse) {
-    try {
-      this.analysisService.init(apiKey);
-      const result = await this.analysisService.analyzeVideo({
-        videoUrl: 'https://example.com/test.mp4',
-        title: '测试视频'
-      }, 'summary');
-
-      sendResponse({
-        success: result.success,
-        error: result.success ? null : result.error
-      });
-    } catch (error) {
-      sendResponse({
-        success: false,
-        error: error.message
-      });
-    }
   }
 
   async handleStreamAnalysis(data, sendResponse) {
