@@ -12,7 +12,9 @@
       "Bash(npm install:*)",
       "Bash(npm run build:*)",
       "Bash(git stash:*)",
-      "Bash(setup-mcp.bat)"
+      "Bash(setup-mcp.bat)",
+      "Bash(npx playwright install:*)",
+      "Bash(npx puppeteer install:*)"
     ]
   }
 }

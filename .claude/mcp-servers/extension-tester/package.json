@@ -7,11 +7,17 @@
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": ["mcp", "chrome-extension", "testing", "playwright"],
+  "keywords": [
+    "mcp",
+    "chrome-extension",
+    "testing",
+    "playwright"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "playwright": "^1.49.1"
+    "playwright": "^1.49.1",
+    "puppeteer": "^24.36.0"
   }
 }
