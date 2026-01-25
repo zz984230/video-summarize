@@ -221,7 +221,7 @@ class BackgroundService {
         const errorText = await response.text();
         this.sendDebugMessage(`bg_api_error: ${response.status} ${errorText.substring(0, 200)}`, senderTabId);
 
-        // 尝试解析错误
+        // 解析错误并抛出
         let errorObj;
         try {
           errorObj = JSON.parse(errorText);
@@ -231,11 +231,9 @@ class BackgroundService {
 
         this.sendDebugMessage(`bg_parsed_error: ${JSON.stringify(errorObj).substring(0, 300)}`, senderTabId);
 
-        // 如果是 video_url 格式错误，尝试纯文本分析
+        // 如果是 video_url 格式错误，直接抛出错误提示用户
         if (errorObj.error?.code === '1214' || errorObj.error?.message?.includes('video_url格式错误')) {
-          this.sendDebugMessage(`bg_fallback_to_text`, senderTabId);
-          await this.fallbackTextAnalysis(videoData, config, senderTabId);
-          return;
+          throw new Error('该视频格式暂不支持AI分析，请尝试其他视频或联系开发者');
         }
 
         throw new Error(`API请求失败: ${response.status} ${errorText}`);
@@ -299,60 +297,6 @@ class BackgroundService {
     };
 
     return prompts[analysisType] || prompts.general;
-  }
-
-  async fallbackTextAnalysis(videoData, config, senderTabId) {
-    console.log('📝 [Background] Starting fallback text analysis');
-
-    try {
-      // 使用纯文本模式分析视频元数据
-      const textPrompt = `请根据以下视频元数据生成摘要：
-
-标题：${videoData.title}
-UP主：${videoData.owner}
-时长：${videoData.duration}秒
-播放量：${videoData.view}
-
-请生成一个简洁的视频摘要（200字以内），包括：
-1. 视频主题
-2. 主要内容
-3. 值得关注的点
-
-注意：由于技术限制，我无法直接观看视频内容，以上分析基于视频元数据。`;
-
-      const requestBody = {
-        model: config.modelId,
-        stream: true,
-        messages: [{
-          role: 'user',
-          content: textPrompt
-        }],
-        max_tokens: 500,
-        temperature: 0.7
-      };
-
-      const response = await fetch(`${config.apiUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`文本分析API请求失败: ${response.status} ${errorText}`);
-      }
-
-      // 解析SSE流（复用现有方法，但使用 bvid 作为标识符）
-      await this.parseSSEStream(response, videoData.bvid || 'text', senderTabId);
-
-    } catch (error) {
-      console.error('❌ [Background] Fallback text analysis failed:', error);
-      this.sendStreamError(videoData.bvid || 'text', error.message, senderTabId);
-      throw error;
-    }
   }
 
   async parseSSEStream(response, bvid, senderTabId) {

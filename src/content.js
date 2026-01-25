@@ -752,10 +752,57 @@ class BilibiliContentScript {
       }
 
       .stream-modal .stream-content {
-        margin-top: 20px;
+        margin-top: 16px;
         line-height: 1.8;
         color: #374151;
         font-size: 15px;
+      }
+
+      .stream-modal .formatted-content {
+        animation: fadeIn 0.3s ease;
+      }
+
+      .stream-modal .content-block {
+        margin-bottom: 16px;
+        padding: 16px;
+        background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+        border-radius: 12px;
+        border-left: 4px solid #667eea;
+        animation: slideIn 0.3s ease;
+      }
+
+      .stream-modal .content-header {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e5e7eb;
+      }
+
+      .stream-modal .list-item {
+        padding: 8px 12px;
+        margin: 6px 0;
+        background: white;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #4b5563;
+        display: flex;
+        align-items: flex-start;
+      }
+
+      .stream-modal .list-item::before {
+        content: '•';
+        color: #667eea;
+        font-weight: bold;
+        margin-right: 8px;
+        font-size: 18px;
+      }
+
+      .stream-modal .text-line {
+        padding: 8px 0;
+        color: #4b5563;
+        line-height: 1.8;
       }
 
       .stream-modal .stream-content .chunk {
@@ -932,10 +979,21 @@ class BilibiliContentScript {
       loadingEl.remove();
     }
 
-    // 追加内容
-    const span = document.createElement('span');
-    span.textContent = text;
-    contentEl.appendChild(span);
+    // 检查是否是第一次添加内容
+    const isFirstContent = contentEl.children.length === 0;
+
+    // 如果是第一次添加内容，创建格式化的内容容器
+    if (isFirstContent) {
+      contentEl.innerHTML = '';
+      const formattedContent = document.createElement('div');
+      formattedContent.className = 'formatted-content';
+      contentEl.appendChild(formattedContent);
+    }
+
+    const formattedEl = contentEl.querySelector('.formatted-content');
+
+    // 追加内容（带简单格式化）
+    this.appendFormattedText(formattedEl, text);
 
     // 保存完整内容
     this.fullContent += text;
@@ -947,8 +1005,71 @@ class BilibiliContentScript {
     }
   }
 
+  appendFormattedText(container, text) {
+    // 将文本按换行符分割并格式化
+    const lines = text.split('\n');
+
+    // 检查容器中是否已经有内容块
+    let currentBlock = container.querySelector('.content-block:last-child');
+    if (!currentBlock) {
+      currentBlock = document.createElement('div');
+      currentBlock.className = 'content-block';
+      container.appendChild(currentBlock);
+    }
+
+    // 获取当前块中的最后一个文本节点
+    let lastTextSpan = currentBlock.querySelector('.text-line:last-child');
+
+    lines.forEach((line, index) => {
+      if (line.trim() === '') {
+        // 空行，创建新的内容块
+        if (currentBlock && currentBlock.textContent.trim() !== '') {
+          currentBlock = document.createElement('div');
+          currentBlock.className = 'content-block';
+          container.appendChild(currentBlock);
+        }
+        lastTextSpan = null;
+      } else {
+        // 检查是否是列表项或标题
+        const trimmedLine = line.trim();
+        const isListItem = /^[\d\-\*\•]\s/.test(trimmedLine) || /^[\u4e00-\u9fa5]、/.test(trimmedLine);
+        const isHeader = /^#+\s/.test(trimmedLine) || /^[一二三四五六七八九十][、\.]\s/.test(trimmedLine);
+
+        if (isListItem) {
+          const li = document.createElement('div');
+          li.className = 'list-item';
+          li.textContent = line;
+          currentBlock.appendChild(li);
+          lastTextSpan = null;
+        } else if (isHeader) {
+          const header = document.createElement('div');
+          header.className = 'content-header';
+          header.textContent = line;
+          currentBlock.appendChild(header);
+          lastTextSpan = null;
+        } else {
+          if (!lastTextSpan) {
+            lastTextSpan = document.createElement('div');
+            lastTextSpan.className = 'text-line';
+            currentBlock.appendChild(lastTextSpan);
+          }
+          lastTextSpan.textContent += (lastTextSpan.textContent ? ' ' : '') + line;
+        }
+      }
+    });
+  }
+
   onStreamComplete(fullContent) {
     if (!this.currentModal) return;
+
+    // 移除加载动画
+    const contentEl = this.currentModal.querySelector('#streamContent');
+    if (contentEl) {
+      const loadingEl = contentEl.querySelector('.loading-indicator');
+      if (loadingEl) {
+        loadingEl.remove();
+      }
+    }
 
     // 重置按钮状态
     this.setButtonLoading(false);
