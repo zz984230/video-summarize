@@ -323,19 +323,37 @@ class BilibiliContentScript {
   }
 
   async onSummaryButtonClick() {
+    // DEBUG: Write to DOM for debugging
+    const debugEl = document.createElement('div');
+    debugEl.id = 'bilibili-debug-info';
+    debugEl.style.display = 'none';
+    debugEl.setAttribute('data-timestamp', Date.now());
+    document.body.appendChild(debugEl);
+
+    const updateDebug = (key, value) => {
+      debugEl.setAttribute(`data-${key}`, JSON.stringify(value));
+    };
+
+    updateDebug('step', 'onSummaryButtonClick_start');
     try {
       console.log('🔄 点击AI摘要按钮，开始分析...');
+      updateDebug('step', 'try_block_entered');
 
       // 检查是否有当前视频信息
       if (!this.currentVideoInfo) {
+        updateDebug('error', 'No currentVideoInfo');
         throw new Error('未找到视频信息，请刷新页面重试');
       }
+      updateDebug('step', 'currentVideoInfo_checked');
 
       console.log('✅ 当前视频信息:', this.currentVideoInfo);
+      updateDebug('videoInfo', JSON.stringify(this.currentVideoInfo));
 
       // 获取当前页面视频信息 - 使用测试文件中验证过的方法
       console.log('🔍 开始获取视频详细信息...');
+      updateDebug('step', 'fetching_video_info');
       const videoInfo = await this.parser.getVideoInfo(this.currentVideoInfo.bvid);
+      updateDebug('step', 'video_info_fetched');
 
       console.log('✅ 视频基本信息获取成功:', {
         bvid: videoInfo.bvid,
@@ -346,11 +364,13 @@ class BilibiliContentScript {
 
       // 获取播放地址 - 修复API调用参数问题
       console.log('🔍 开始获取视频播放地址...');
+      updateDebug('step', 'fetching_video_urls');
       const videoUrls = await this.parser.getVideoUrls(
         videoInfo.aid,
         videoInfo.pages[0].cid,
         64  // 720P质量
       );
+      updateDebug('step', 'video_urls_fetched');
 
       if (!videoUrls || videoUrls.length === 0) {
         throw new Error('无法获取视频播放地址');
@@ -360,39 +380,76 @@ class BilibiliContentScript {
 
       // 准备分析数据 - 使用正确的URL结构
       const videoData = {
-        videoUrl: videoUrls[0].url,  // 使用第一个分段的URL
+        // Zhipu API 需要 BV 号或页面 URL，而不是直接的 MP4 URL
+        bvid: this.currentVideoInfo.bvid,
+        pageUrl: this.currentVideoInfo.url,
         title: videoInfo.title,
-        owner: videoInfo.owner.name || videoInfo.owner,  // 兼容不同格式
+        owner: videoInfo.owner.name || videoInfo.owner,
         duration: videoInfo.duration,
         view: videoInfo.view,
         pages: videoInfo.pages.length
       };
 
       console.log('📦 准备发送流式分析请求:', videoData);
+      updateDebug('step', 'videoData_prepared');
+      updateDebug('videoData', JSON.stringify(videoData));
 
       // 创建流式模态框
       this.currentModal = this.createStreamModal();
       document.body.appendChild(this.currentModal);
+      updateDebug('step', 'modal_created');
 
       // 重置内容
       this.fullContent = '';
 
       // 设置按钮加载状态
       this.setButtonLoading(true);
+      updateDebug('step', 'sending_message');
 
       // 发送流式分析请求
-      chrome.runtime.sendMessage({
-        action: 'START_STREAM_ANALYSIS',
-        data: {
-          videoData: videoData,
-          analysisType: 'general'
-        }
-      }, (response) => {
-        if (response && !response.success) {
-          this.onStreamError(response.error || '启动分析失败');
-          this.setButtonLoading(false);
-        }
-      });
+      console.log('🚀 发送消息到后台...');
+      updateDebug('step', 'sending_message');
+      try {
+        chrome.runtime.sendMessage({
+          action: 'START_STREAM_ANALYSIS',
+          data: {
+            videoData: videoData,
+            analysisType: 'general'
+          }
+        }, (response) => {
+          console.log('📨 收到后台响应:', response);
+          updateDebug('response_received', JSON.stringify(response));
+
+          if (chrome.runtime.lastError) {
+            console.error('❌ Chrome runtime error:', chrome.runtime.lastError);
+            updateDebug('error', 'chrome_runtime_error: ' + chrome.runtime.lastError.message);
+            this.onStreamError(chrome.runtime.lastError.message || '通信错误');
+            this.setButtonLoading(false);
+            return;
+          }
+          if (!response) {
+            console.error('❌ 后台无响应');
+            updateDebug('error', 'no_response_from_background');
+            this.onStreamError('后台服务无响应，请检查扩展是否正常运行');
+            this.setButtonLoading(false);
+            return;
+          }
+          if (!response.success) {
+            console.error('❌ 后台返回错误:', response.error);
+            updateDebug('error', 'background_error: ' + response.error);
+            this.onStreamError(response.error || '启动分析失败');
+            this.setButtonLoading(false);
+            return;
+          }
+          console.log('✅ 后台消息处理成功');
+          updateDebug('step', 'response_success');
+        });
+      } catch (sendError) {
+        console.error('❌ 发送消息失败:', sendError);
+        updateDebug('error', 'send_error: ' + sendError.message);
+        this.onStreamError(sendError.message || '发送消息失败');
+        this.setButtonLoading(false);
+      }
 
     } catch (error) {
       console.error('❌ 摘要生成失败:', error);
@@ -955,9 +1012,10 @@ class BilibiliContentScript {
         color: #991b1b;
         margin-top: 16px;
       `;
+      const errorMessage = typeof error === 'string' ? error : (error?.message || '未知错误');
       errorDiv.innerHTML = `
         <strong>❌ 分析失败</strong><br>
-        ${this.escapeHtml(error.message || '未知错误')}
+        ${this.escapeHtml(errorMessage)}
       `;
       contentEl.appendChild(errorDiv);
     }
@@ -1038,9 +1096,22 @@ class BilibiliContentScript {
         case 'STREAM_ERROR':
           this.onStreamError(message.data.error);
           break;
+        case 'DEBUG_MESSAGE':
+          this.handleDebugMessage(message.data.message);
+          break;
       }
       return true;
     });
+  }
+
+  handleDebugMessage(message) {
+    const debugEl = document.querySelector('#bilibili-debug-info');
+    if (debugEl) {
+      const [key, ...valueParts] = message.split(': ');
+      const value = valueParts.join(': ') || 'true';
+      debugEl.setAttribute(`data-${key}`, value);
+      console.log(`[DEBUG] ${key}: ${value}`);
+    }
   }
 }
 

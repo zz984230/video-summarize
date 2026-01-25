@@ -54,7 +54,8 @@ class BackgroundService {
           return await this.setStorage(request.key, request.value, sendResponse);
 
         case 'START_STREAM_ANALYSIS':
-          return await this.handleStreamAnalysis(request.data, sendResponse);
+          this.handleStreamAnalysis(request.data, sendResponse, sender);
+          return true;
 
         default:
           console.warn('⚠️ 未知的消息类型:', request.action);
@@ -102,7 +103,7 @@ class BackgroundService {
     });
   }
 
-  async handleStreamAnalysis(data, sendResponse) {
+  async handleStreamAnalysis(data, sendResponse, sender) {
     const { videoData, analysisType } = data;
 
     try {
@@ -110,8 +111,10 @@ class BackgroundService {
 
       // 从存储获取API配置
       const result = await chrome.storage.sync.get(['apiKey', 'apiUrl', 'modelId']);
+      console.log('📋 [Background] Storage result:', JSON.stringify(result));
 
       if (!result.apiKey) {
+        console.error('❌ [Background] No API key found');
         sendResponse({
           success: false,
           error: '请先在设置页面配置API密钥'
@@ -124,11 +127,29 @@ class BackgroundService {
         apiUrl: result.apiUrl || 'https://open.bigmodel.cn/api/paas/v4',
         modelId: result.modelId || 'glm-4.6v-flash'
       };
+      console.log('✅ [Background] Config prepared:', { apiUrl: config.apiUrl, modelId: config.modelId });
 
-      // 发送流式分析请求
-      await this.streamVideoAnalysis(videoData, analysisType, config);
+      // 获取发送者标签页ID
+      const senderTabId = sender.tab?.id;
+      if (!senderTabId) {
+        console.error('❌ [Background] No sender tab ID');
+        sendResponse({
+          success: false,
+          error: '无法获取标签页信息'
+        });
+        return;
+      }
 
+      // 立即发送响应，然后异步处理流式分析
       sendResponse({ success: true });
+      console.log('✅ [Background] Response sent, starting async analysis');
+
+      // 发送流式分析请求（不等待）
+      this.streamVideoAnalysis(videoData, analysisType, config, senderTabId).catch(error => {
+        console.error('❌ [Background] Async stream analysis failed:', error);
+        this.sendDebugMessage(`bg_final_error: ${error.message}`, senderTabId);
+      });
+
     } catch (error) {
       console.error('❌ [Background] Stream analysis failed:', error);
       sendResponse({
@@ -138,19 +159,30 @@ class BackgroundService {
     }
   }
 
-  async streamVideoAnalysis(videoData, analysisType, config) {
-    console.log('🎬 [Background] Starting stream analysis:', videoData.bvid);
+  async streamVideoAnalysis(videoData, analysisType, config, senderTabId) {
+    console.log('🎬 [Background] Starting stream analysis:', videoData.title || videoData.bvid);
 
     try {
-      // 获取视频URL
-      const videoInfo = await this.parser.getVideoInfo(videoData.bvid);
-      const videoUrls = await this.parser.getVideoUrls(videoInfo.aid, videoInfo.cid, 64);
+      // 尝试多种格式：BV号、页面URL、直接视频URL
+      // Zhipu GLM-4.6V 可能支持不同的视频格式
+      let videoIdentifier = videoData.bvid;
 
-      if (!videoUrls || videoUrls.length === 0) {
-        throw new Error('无法获取视频URL');
+      // 如果 bvid 不存在，尝试 pageUrl
+      if (!videoIdentifier && videoData.pageUrl) {
+        videoIdentifier = videoData.pageUrl;
       }
 
-      const videoUrl = videoUrls[0].url;
+      // 如果都不存在，尝试直接视频 URL（如果有的话）
+      if (!videoIdentifier && videoData.videoUrl) {
+        videoIdentifier = videoData.videoUrl;
+      }
+
+      if (!videoIdentifier) {
+        throw new Error('视频标识符为空');
+      }
+
+      this.sendDebugMessage(`bg_video_identifier: ${videoIdentifier}`, senderTabId);
+      this.sendDebugMessage(`bg_identifier_type: ${videoIdentifier.startsWith('http') ? 'URL' : 'BV ID'}`, senderTabId);
 
       // 构建提示词
       const prompt = this.buildAnalysisPrompt(videoData, analysisType);
@@ -162,13 +194,16 @@ class BackgroundService {
         messages: [{
           role: 'user',
           content: [
-            { type: 'video_url', video_url: videoUrl },
+            { type: 'video_url', video_url: videoIdentifier },
             { type: 'text', text: prompt }
           ]
         }],
         max_tokens: 1000,
         temperature: 0.7
       };
+
+      this.sendDebugMessage(`bg_api_url: ${config.apiUrl}/chat/completions`, senderTabId);
+      this.sendDebugMessage(`bg_fetch_start`, senderTabId);
 
       // 发送流式请求
       const response = await fetch(`${config.apiUrl}/chat/completions`, {
@@ -180,19 +215,53 @@ class BackgroundService {
         body: JSON.stringify(requestBody)
       });
 
+      this.sendDebugMessage(`bg_response_status: ${response.status}`, senderTabId);
+
       if (!response.ok) {
         const errorText = await response.text();
+        this.sendDebugMessage(`bg_api_error: ${response.status} ${errorText.substring(0, 200)}`, senderTabId);
+
+        // 尝试解析错误
+        let errorObj;
+        try {
+          errorObj = JSON.parse(errorText);
+        } catch (e) {
+          throw new Error(`API请求失败: ${response.status} ${errorText}`);
+        }
+
+        this.sendDebugMessage(`bg_parsed_error: ${JSON.stringify(errorObj).substring(0, 300)}`, senderTabId);
+
+        // 如果是 video_url 格式错误，尝试纯文本分析
+        if (errorObj.error?.code === '1214' || errorObj.error?.message?.includes('video_url格式错误')) {
+          this.sendDebugMessage(`bg_fallback_to_text`, senderTabId);
+          await this.fallbackTextAnalysis(videoData, config, senderTabId);
+          return;
+        }
+
         throw new Error(`API请求失败: ${response.status} ${errorText}`);
       }
 
+      this.sendDebugMessage(`bg_stream_start`, senderTabId);
       // 解析SSE流
-      await this.parseSSEStream(response, videoData.bvid);
+      await this.parseSSEStream(response, videoData.bvid, senderTabId);
 
     } catch (error) {
+      this.sendDebugMessage(`bg_error: ${error.message}`, senderTabId);
       console.error('❌ [Background] Stream analysis error:', error);
-      this.sendStreamError(videoData.bvid, error.message);
+      this.sendStreamError(videoData.bvid, error.message, senderTabId);
       throw error;
     }
+  }
+
+  sendDebugMessage(message, senderTabId) {
+    chrome.tabs.sendMessage(senderTabId, {
+      action: 'DEBUG_MESSAGE',
+      data: { message }
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('⚠️ [Background] Debug message not delivered:', chrome.runtime.lastError.message);
+      }
+    });
   }
 
   buildAnalysisPrompt(videoData, analysisType) {
@@ -232,7 +301,61 @@ class BackgroundService {
     return prompts[analysisType] || prompts.general;
   }
 
-  async parseSSEStream(response, bvid) {
+  async fallbackTextAnalysis(videoData, config, senderTabId) {
+    console.log('📝 [Background] Starting fallback text analysis');
+
+    try {
+      // 使用纯文本模式分析视频元数据
+      const textPrompt = `请根据以下视频元数据生成摘要：
+
+标题：${videoData.title}
+UP主：${videoData.owner}
+时长：${videoData.duration}秒
+播放量：${videoData.view}
+
+请生成一个简洁的视频摘要（200字以内），包括：
+1. 视频主题
+2. 主要内容
+3. 值得关注的点
+
+注意：由于技术限制，我无法直接观看视频内容，以上分析基于视频元数据。`;
+
+      const requestBody = {
+        model: config.modelId,
+        stream: true,
+        messages: [{
+          role: 'user',
+          content: textPrompt
+        }],
+        max_tokens: 500,
+        temperature: 0.7
+      };
+
+      const response = await fetch(`${config.apiUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`文本分析API请求失败: ${response.status} ${errorText}`);
+      }
+
+      // 解析SSE流（复用现有方法，但使用 bvid 作为标识符）
+      await this.parseSSEStream(response, videoData.bvid || 'text', senderTabId);
+
+    } catch (error) {
+      console.error('❌ [Background] Fallback text analysis failed:', error);
+      this.sendStreamError(videoData.bvid || 'text', error.message, senderTabId);
+      throw error;
+    }
+  }
+
+  async parseSSEStream(response, bvid, senderTabId) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -244,7 +367,7 @@ class BackgroundService {
 
         if (done) {
           console.log('✅ [Background] Stream completed');
-          this.sendStreamEnd(bvid, fullContent);
+          this.sendStreamEnd(bvid, fullContent, senderTabId);
           break;
         }
 
@@ -258,7 +381,7 @@ class BackgroundService {
 
             if (data === '[DONE]') {
               console.log('✅ [Background] Stream completed with [DONE]');
-              this.sendStreamEnd(bvid, fullContent);
+              this.sendStreamEnd(bvid, fullContent, senderTabId);
               return;
             }
 
@@ -273,7 +396,7 @@ class BackgroundService {
 
               if (content) {
                 fullContent += content;
-                this.sendStreamChunk(bvid, content);
+                this.sendStreamChunk(bvid, content, senderTabId);
               }
             } catch (e) {
               console.warn('⚠️ [Background] Failed to parse SSE data:', data, e);
@@ -286,36 +409,24 @@ class BackgroundService {
     }
   }
 
-  sendStreamChunk(bvid, content) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          action: 'STREAM_CHUNK',
-          data: { content }
-        });
-      }
+  sendStreamChunk(bvid, content, senderTabId) {
+    chrome.tabs.sendMessage(senderTabId, {
+      action: 'STREAM_CHUNK',
+      data: { content }
     });
   }
 
-  sendStreamEnd(bvid, fullContent) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          action: 'STREAM_END',
-          data: { content: fullContent }
-        });
-      }
+  sendStreamEnd(bvid, fullContent, senderTabId) {
+    chrome.tabs.sendMessage(senderTabId, {
+      action: 'STREAM_END',
+      data: { content: fullContent }
     });
   }
 
-  sendStreamError(bvid, error) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          action: 'STREAM_ERROR',
-          data: { error }
-        });
-      }
+  sendStreamError(bvid, error, senderTabId) {
+    chrome.tabs.sendMessage(senderTabId, {
+      action: 'STREAM_ERROR',
+      data: { error }
     });
   }
 
