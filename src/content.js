@@ -1422,17 +1422,12 @@ class StreamCardRenderer {
       this.currentCard = this.createNewCard(title);
       this.container.appendChild(this.currentCard);
       this.cardCount++;
+    }
 
-      // 立即更新内容（如果有）
-      if (content) {
-        this.updateCardContent();
-      }
-    } else {
-      // 同一卡片，追加内容
-      if (content) {
-        this.currentContent += '\n' + content;
-        this.updateCardContent();
-      }
+    // 无论标题是否相同，都更新内容（流式渲染）
+    if (content) {
+      this.currentContent = content;
+      this.updateCardContent();
     }
   }
 
@@ -1521,7 +1516,8 @@ class StreamCardRenderer {
         // 移除列表标记前缀，只保留内容
         const content = trimmed.replace(/^[\d\-\*\•\①②③④⑤⑥⑦⑧⑨⑩]\s+/, '')
                            .replace(/^[\u4e00-\u9fa5\u3000-\u303f][\u4e00-\u9fa5\d\.、]\s+/, '');
-        return `<li class="card-list-item">${this.escapeHtml(content.trim())}</li>`;
+        // 使用 <p> 标签，但添加 list-item class 来保留列表样式
+        return `<p class="card-paragraph card-list-item">${this.escapeHtml(content.trim())}</p>`;
       }
 
       // 普通段落
